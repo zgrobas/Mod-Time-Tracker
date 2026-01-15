@@ -1,0 +1,81 @@
+
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MOD Tracker - Vibrant Grid</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#00a3e0",
+                        "mod-blue": "#00a3e0",
+                        "mod-dark": "#05070a",
+                        "mod-card": "#0d1117",
+                        "mod-border": "#1f2937",
+                        "background-dark": "#020408",
+                    },
+                    fontFamily: {
+                        "sans": ["Inter", "sans-serif"],
+                        "mono": ["JetBrains Mono", "monospace"]
+                    },
+                    borderRadius: { "DEFAULT": "0rem", "lg": "0rem", "xl": "0rem", "full": "9999px" },
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer components {
+            .active-project-card {
+                @apply border-4 border-white z-10 scale-[1.02] !important;
+                box-shadow: 0 0 30px rgba(255, 255, 255, 0.3);
+            }
+            .vibrant-red { background-color: #e63946; }
+            .vibrant-blue { background-color: #457b9d; }
+            .vibrant-green { background-color: #2a9d8f; }
+            .vibrant-orange { background-color: #f4a261; }
+            .vibrant-purple { background-color: #8338ec; }
+            .vibrant-pink { background-color: #ff006e; }
+            .vibrant-cyan { background-color: #00f5d4; }
+            .vibrant-yellow { background-color: #ffbe0b; }
+            .vibrant-indigo { background-color: #3a86ff; }
+            .vibrant-emerald { background-color: #06d6a0; }
+            .vibrant-crimson { background-color: #9d0208; }
+            .vibrant-teal { background-color: #006d77; }
+            .vibrant-amber { background-color: #fb8500; }
+            .vibrant-violet { background-color: #5a189a; }
+            .vibrant-lime { background-color: #70e000; }
+        }
+        
+        body {
+            @apply bg-mod-dark text-white font-sans;
+            scrollbar-width: thin;
+            scrollbar-color: #1f2937 #05070a;
+        }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #05070a; }
+        ::-webkit-scrollbar-thumb { background: #1f2937; }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "@google/genai": "https://esm.sh/@google/genai@^1.36.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body>
+    <div id="root"></div>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>
