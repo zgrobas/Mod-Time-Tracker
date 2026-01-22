@@ -8,100 +8,122 @@ interface LoginViewProps {
 }
 
 const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
-  const [users, setUsers] = useState<User[]>([]);
-  const [newUsername, setNewUsername] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [serverStatus, setServerStatus] = useState<'checking' | 'online' | 'offline'>('checking');
 
   useEffect(() => {
-    loadUsers();
+    const check = async () => {
+      const isOnline = await db.checkConnection();
+      setServerStatus(isOnline ? 'online' : 'offline');
+    };
+    check();
   }, []);
 
-  const loadUsers = async () => {
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
     try {
       const allUsers = await db.getUsers();
-      setUsers(allUsers);
-    } catch (e) {
-      console.error("Error cargando operadores", e);
+      const user = allUsers.find(u => 
+        u.username.toLowerCase() === username.toLowerCase() && 
+        u.password === password
+      );
+
+      if (user) {
+        user.lastLogin = new Date().toISOString();
+        await db.saveUser(user);
+        onLogin(user);
+      } else {
+        setError('CREDENCIALES INCORRECTAS O USUARIO INEXISTENTE.');
+      }
+    } catch (e: any) {
+      console.error(e);
+      if (e.message.includes('404')) {
+        setError('ERROR 404: El archivo api.php no se encuentra en el servidor Plesk.');
+      } else {
+        setError(`FALLO DE CONEXIÓN: ${e.message || 'El servidor MySQL no responde'}`);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCreateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newUsername.trim()) return;
-
-    const newUser: User = {
-      id: Math.random().toString(36).substr(2, 9),
-      username: newUsername.toUpperCase().replace(/\s/g, '_'),
-      avatarSeed: Math.random().toString(36).substr(2, 5),
-      lastLogin: new Date().toISOString()
-    };
-
-    await db.saveUser(newUser);
-    setNewUsername('');
-    loadUsers();
-  };
-
-  if (loading) return (
-    <div className="h-screen bg-mod-dark flex items-center justify-center font-mono">
-      <p className="text-mod-blue animate-pulse">INICIALIZANDO TERMINAL...</p>
-    </div>
-  );
-
   return (
-    <div className="h-screen bg-mod-dark flex items-center justify-center p-6">
-      <div className="w-full max-w-lg">
+    <div className="h-screen bg-mod-dark flex items-center justify-center p-6 relative overflow-hidden">
+      {/* Background Decor */}
+      <div className="absolute inset-0 opacity-10 pointer-events-none">
+        <div className="absolute top-[-10%] left-[-10%] w-1/2 h-1/2 bg-mod-blue blur-[150px] rounded-full"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-1/2 h-1/2 bg-red-600 blur-[150px] rounded-full"></div>
+      </div>
+
+      <div className="w-full max-w-md relative z-10">
         <div className="mb-12 text-center">
           <div className="inline-block p-4 border-2 border-mod-blue mb-4">
-            <span className="material-symbols-outlined text-mod-blue text-5xl">lock_open</span>
+            <span className="material-symbols-outlined text-mod-blue text-5xl">security</span>
           </div>
           <h1 className="text-3xl font-black tracking-tighter text-white uppercase italic">MOD <span className="text-slate-500 font-light not-italic">TRACKER</span></h1>
-          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.4em] mt-2">Acceso a Estación de Trabajo</p>
+          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.4em] mt-2">Acceso Centralizado MySQL</p>
         </div>
 
-        <div className="bg-mod-card border border-mod-border p-10 shadow-2xl">
-          <div className="mb-10">
-            <h3 className="text-white text-xs font-black uppercase tracking-widest mb-6 border-b border-mod-border pb-2">Seleccionar Operador</h3>
-            <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
-              {users.map(user => (
-                <button
-                  key={user.id}
-                  onClick={() => onLogin(user)}
-                  className="w-full flex items-center justify-between p-4 bg-mod-dark border border-mod-border hover:border-mod-blue transition-all group"
-                >
-                  <div className="flex items-center gap-4">
-                    <img src={`https://picsum.photos/seed/${user.avatarSeed}/40`} className="w-8 h-8 grayscale group-hover:grayscale-0 transition-all border border-mod-border" alt="avatar" />
-                    <span className="text-white font-mono text-sm tracking-tighter">{user.username}</span>
-                  </div>
-                  <span className="material-symbols-outlined text-slate-700 group-hover:text-mod-blue transition-colors">login</span>
-                </button>
-              ))}
-              {users.length === 0 && (
-                <p className="text-slate-600 text-center italic text-xs py-4">No hay operadores registrados en este terminal.</p>
-              )}
-            </div>
+        <div className="bg-mod-card border border-mod-border p-8 shadow-2xl relative">
+          <div className={`absolute top-0 right-0 p-2 text-[8px] font-bold uppercase flex items-center gap-1 ${serverStatus === 'online' ? 'text-emerald-500' : 'text-red-500'}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${serverStatus === 'online' ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`}></span>
+            Server: {serverStatus.toUpperCase()}
           </div>
 
-          <form onSubmit={handleCreateUser} className="pt-8 border-t border-mod-border">
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Registrar Nuevo Operador</label>
-            <div className="flex gap-2">
+          <form onSubmit={handleLogin} className="space-y-6">
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Usuario (p. ej. Admin)</label>
               <input
-                value={newUsername}
-                onChange={e => setNewUsername(e.target.value)}
+                autoFocus
+                value={username}
+                onChange={e => setUsername(e.target.value)}
                 placeholder="ID_OPERADOR"
-                className="flex-1 bg-mod-dark border border-mod-border text-white px-4 py-3 text-sm font-mono focus:border-mod-blue outline-none"
+                className="w-full bg-mod-dark border border-mod-border text-white px-4 py-3 text-sm font-mono focus:border-mod-blue outline-none transition-all"
+                required
               />
-              <button className="bg-white text-mod-dark px-6 font-bold text-[10px] uppercase tracking-widest hover:bg-mod-blue hover:text-white transition-all">
-                Registrar
-              </button>
             </div>
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Clave de Acceso</label>
+              <input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full bg-mod-dark border border-mod-border text-white px-4 py-3 text-sm font-mono focus:border-mod-blue outline-none transition-all"
+                required
+              />
+            </div>
+            
+            {error && (
+              <div className="bg-red-900/20 border border-red-500 p-3 text-red-500 text-[9px] font-bold uppercase tracking-widest leading-relaxed">
+                {error}
+                {error.includes('404') && (
+                  <p className="mt-2 text-white/70 normal-case">Nota: Si estás en desarrollo local, api.php no funcionará hasta que lo subas a Plesk.</p>
+                )}
+              </div>
+            )}
+
+            <button 
+              disabled={loading || serverStatus === 'offline'}
+              className="w-full bg-white text-mod-dark py-4 font-bold text-[10px] uppercase tracking-[0.3em] hover:bg-mod-blue hover:text-white transition-all disabled:opacity-30"
+            >
+              {loading ? 'AUTENTICANDO...' : 'ENTRAR AL SISTEMA'}
+            </button>
           </form>
         </div>
 
         <div className="mt-8 flex justify-between items-center px-4">
-          <p className="text-[9px] text-slate-700 font-bold uppercase tracking-widest">Base de Datos: IndexedDB (Local)</p>
-          <p className="text-[9px] text-slate-700 font-bold uppercase tracking-widest">Estado: Operativo</p>
+          <p className="text-[9px] text-slate-700 font-bold uppercase tracking-widest">v4.2 Persistent Build</p>
+          <div className="text-[9px] text-slate-700 font-bold uppercase tracking-widest flex items-center gap-2">
+            <span>MySQL DB:</span>
+            <span className={serverStatus === 'online' ? 'text-emerald-900' : 'text-red-900'}>{serverStatus === 'online' ? 'Sincronizada' : 'Desconectada'}</span>
+          </div>
         </div>
       </div>
     </div>

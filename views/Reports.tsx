@@ -40,10 +40,11 @@ const Reports: React.FC<ReportsProps> = ({ projects, historicalLogs, onManualCom
     projects.reduce((acc, p) => acc + p.currentDaySeconds, 0),
   [projects]);
 
-  const formatSeconds = (seconds: number) => {
+  const formatSecondsFull = (seconds: number) => {
     const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
     const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
-    return `${h}:${m}`;
+    const s = (seconds % 60).toString().padStart(2, '0');
+    return `${h}:${m}:${s}`;
   };
 
   const handleExportCSV = () => {
@@ -54,8 +55,8 @@ const Reports: React.FC<ReportsProps> = ({ projects, historicalLogs, onManualCom
       }
       return stringified;
     };
-    const headers = ['ID', 'Fecha', 'Proyecto', 'Duracion (Minutos)', 'Estado'];
-    const rows = historicalLogs.map(l => [l.id, l.date, l.projectName, (l.durationSeconds / 60).toFixed(2), l.status]);
+    const headers = ['ID', 'Fecha', 'Proyecto', 'Duracion (Segundos)', 'Estado'];
+    const rows = historicalLogs.map(l => [l.id, l.date, l.projectName, l.durationSeconds, l.status]);
     const csvContent = [headers, ...rows].map(row => row.map(escapeCSV).join(",")).join("\n");
     const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -94,7 +95,7 @@ const Reports: React.FC<ReportsProps> = ({ projects, historicalLogs, onManualCom
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
         {[
-          { label: 'Uptime de Sesión', value: formatSeconds(totalTrackedToday), icon: 'schedule', unit: 'H:M' },
+          { label: 'Uptime de Sesión', value: formatSecondsFull(totalTrackedToday), icon: 'schedule', unit: 'HH:MM:SS' },
           { label: 'Proceso Primario', value: projects.find(p => p.status === 'Running')?.name || 'INACTIVO', icon: 'emergency', unit: 'ACTIVO' },
           { label: 'Logs Indexados', value: historicalLogs.length.toString(), icon: 'history', unit: 'REGISTROS' },
         ].map((stat, i) => (
@@ -172,7 +173,7 @@ const Reports: React.FC<ReportsProps> = ({ projects, historicalLogs, onManualCom
                     <span className="text-white font-bold uppercase tracking-tight">{log.projectName}</span>
                   </td>
                   <td className="px-8 py-5 font-mono text-mod-blue">
-                    {(log.durationSeconds / 60).toFixed(2)} MIN
+                    {formatSecondsFull(log.durationSeconds)}
                   </td>
                   <td className="px-8 py-5">
                     <span className="px-2 py-0.5 border border-emerald-500/50 text-emerald-400 text-[10px] font-black uppercase tracking-widest bg-emerald-500/5">

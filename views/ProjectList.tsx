@@ -8,6 +8,13 @@ interface ProjectListProps {
 }
 
 const ProjectList: React.FC<ProjectListProps> = ({ projects, onEditProject }) => {
+  const formatTimeStrFull = (seconds: number) => {
+    const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
+    const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
+    const s = (seconds % 60).toString().padStart(2, '0');
+    return `${h}:${m}:${s}`;
+  };
+
   const handleExportCurrentProjects = () => {
     const escapeCSV = (str: any) => {
       const stringified = String(str ?? '');
@@ -17,10 +24,10 @@ const ProjectList: React.FC<ProjectListProps> = ({ projects, onEditProject }) =>
       return stringified;
     };
 
-    const headers = ['ID', 'Nombre', 'Categoría', 'Departamento', 'Minutos Hoy', 'Horas Totales', 'Estado'];
+    const headers = ['ID', 'Nombre', 'Categoría', 'Departamento', 'Tiempo Hoy', 'Horas Totales', 'Estado'];
     const rows = projects.map(p => [
       p.id, p.name, p.category, p.department,
-      (p.currentDaySeconds / 60).toFixed(2),
+      formatTimeStrFull(p.currentDaySeconds),
       p.totalHours, p.status
     ]);
 
@@ -97,7 +104,7 @@ const ProjectList: React.FC<ProjectListProps> = ({ projects, onEditProject }) =>
                    </span>
                 </td>
                 <td className="px-8 py-5 font-mono text-slate-300">
-                  {(project.currentDaySeconds / 60).toFixed(2)} MIN
+                  {formatTimeStrFull(project.currentDaySeconds)}
                 </td>
                 <td className="px-8 py-5 text-right">
                   <button 

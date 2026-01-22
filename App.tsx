@@ -1,12 +1,17 @@
-
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import DashboardGrid from './views/DashboardGrid';
 import ProjectList from './views/ProjectList';
 import Reports from './views/Reports';
 import LoginView from './views/LoginView';
-import { View, Project, DailyLog, User } from './types';
+import AdminView from './views/AdminView';
+import ProfileView from './views/ProfileView';
+import AdminUserDetailView from './views/AdminUserDetailView';
+import AdminStatsView from './views/AdminStatsView';
+import WeeklyHistoryView from './views/WeeklyHistoryView';
+import MovementsView from './views/MovementsView';
+import { View, Project, DailyLog, User, Role } from './types';
 import { db } from './services/db';
 
 const VIBRANT_COLORS = [
@@ -16,37 +21,90 @@ const VIBRANT_COLORS = [
   'vibrant-amber', 'vibrant-violet', 'vibrant-lime'
 ];
 
+interface LocalProject extends Project {
+  runningSince?: string | null;
+}
+
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentView, setCurrentView] = useState<View>(View.DASHBOARD);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [isManualModalOpen, setIsManualModalOpen] = useState(false);
+  const [isStartWithTimeModalOpen, setIsStartWithTimeModalOpen] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [editingProject, setEditingProject] = useState<LocalProject | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedAdminUser, setSelectedAdminUser] = useState<User | null>(null);
+  const [showHidden, setShowHidden] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<LocalProject[]>([]);
   const [historicalLogs, setHistoricalLogs] = useState<DailyLog[]>([]);
   const [lastSaveDate, setLastSaveDate] = useState(new Date().toDateString());
+  
+  const projectsRef = useRef<LocalProject[]>([]);
+  const wakeLockRef = useRef<any>(null);
 
-  // Inicializar DB y sesión
-  useEffect(() => {
-    const savedUser = localStorage.getItem('mod_tracker_session');
-    if (savedUser) {
-      setCurrentUser(JSON.parse(savedUser));
+  useEffect(() => { projectsRef.current = projects; }, [projects]);
+
+  const handleWakeLock = async (active: boolean) => {
+    if ('wakeLock' in navigator) {
+      try {
+        if (active && !wakeLockRef.current) {
+          wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+        } else if (!active && wakeLockRef.current) {
+          await wakeLockRef.current.release();
+          wakeLockRef.current = null;
+        }
+      } catch (err) {
+        console.warn("WakeLock Error", err);
+      }
     }
+  };
+
+  useEffect(() => {
+    db.init().then(() => {
+      const savedSession = localStorage.getItem('mod_tracker_session');
+      if (savedSession) {
+        const user = JSON.parse(savedSession);
+        setCurrentUser(user);
+      }
+    });
   }, []);
 
-  // Cargar datos cuando el usuario cambia
   useEffect(() => {
-    if (currentUser) {
+    if (currentUser?.id) {
       loadUserData(currentUser.id);
+      const poll = setInterval(() => loadUserData(currentUser.id), 15000);
+      return () => clearInterval(poll);
     }
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
   const loadUserData = async (userId: string) => {
-    const userProjects = await db.getProjects(userId);
-    const userLogs = await db.getLogs(userId);
-    setProjects(userProjects);
-    setHistoricalLogs(userLogs);
+    try {
+      const [userProjects, userLogs] = await Promise.all([
+        db.getProjects(userId),
+        db.getLogs(userId)
+      ]);
+
+      const nowMillis = Date.now();
+      const updatedProjects = userProjects.map(p => {
+        let displaySeconds = p.currentDaySeconds || 0;
+        if (p.runningSince) {
+          const startMillis = parseInt(p.runningSince);
+          if (!isNaN(startMillis)) {
+            const diff = Math.floor((nowMillis - startMillis) / 1000);
+            displaySeconds += Math.max(0, diff);
+          }
+        }
+        return { ...p, currentDaySeconds: displaySeconds };
+      });
+
+      setProjects(updatedProjects);
+      setHistoricalLogs(userLogs);
+    } catch (e) {
+      console.error("Fallo al cargar datos", e);
+    }
   };
 
   const handleLogin = (user: User) => {
@@ -54,171 +112,329 @@ const App: React.FC = () => {
     localStorage.setItem('mod_tracker_session', JSON.stringify(user));
   };
 
-  const handleLogout = () => {
+  const commitDailyLogs = useCallback(async () => {
+    if (!currentUser) return;
+    const activeProjects = projectsRef.current;
+    
+    for (const p of activeProjects) {
+       if (p.status === 'Running') {
+          await handleToggleTimer(p.id); 
+       }
+    }
+
+    const projectsToCommit = projectsRef.current.filter(p => p.currentDaySeconds > 0);
+    if (projectsToCommit.length === 0) return;
+
+    const today = new Date().toDateString();
+    for (const project of projectsToCommit) {
+      const finalLog: DailyLog = { 
+        id: `LOG-${Math.random().toString(36).substr(2, 6).toUpperCase()}`, 
+        userId: currentUser.id, 
+        date: today, 
+        projectId: project.id, 
+        projectName: project.name, 
+        durationSeconds: Math.floor(project.currentDaySeconds), 
+        status: 'NORMAL'
+      };
+      await db.saveLog(finalLog);
+      
+      await db.saveProject({
+        ...project,
+        userId: currentUser.id,
+        runningSince: null,
+        currentDaySeconds: 0
+      });
+    }
+    
+    loadUserData(currentUser.id);
+  }, [currentUser]);
+
+  const handleLogout = async () => {
+    handleWakeLock(false);
     setCurrentUser(null);
     localStorage.removeItem('mod_tracker_session');
     setProjects([]);
     setHistoricalLogs([]);
+    setCurrentView(View.DASHBOARD);
   };
-
-  // Guardar cambios automáticamente en la DB cuando cambian los proyectos
-  useEffect(() => {
-    if (currentUser && projects.length > 0) {
-      projects.forEach(p => db.saveProject(p));
-    }
-  }, [projects, currentUser]);
-
-  const commitDailyLogs = useCallback(async () => {
-    if (!currentUser) return;
-
-    const projectsToCommit = projects.filter(p => p.currentDaySeconds > 0);
-    if (projectsToCommit.length === 0) return;
-
-    const updatedLogs = [...historicalLogs];
-    
-    for (const project of projectsToCommit) {
-      const existingLogIndex = updatedLogs.findIndex(
-        log => log.projectId === project.id && log.date === lastSaveDate
-      );
-      
-      let finalLog;
-      if (existingLogIndex !== -1) {
-        finalLog = {
-          ...updatedLogs[existingLogIndex],
-          durationSeconds: updatedLogs[existingLogIndex].durationSeconds + project.currentDaySeconds
-        };
-        updatedLogs[existingLogIndex] = finalLog;
-      } else {
-        finalLog = {
-          id: Math.random().toString(36).substr(2, 9),
-          userId: currentUser.id,
-          date: lastSaveDate,
-          projectId: project.id,
-          projectName: project.name,
-          durationSeconds: project.currentDaySeconds,
-          status: 'Billable' as const
-        };
-        updatedLogs.push(finalLog);
-      }
-      // Guardar en base de datos real
-      await db.saveLog(finalLog);
-    }
-    
-    setHistoricalLogs(updatedLogs);
-    setProjects(prev => prev.map(p => ({ ...p, currentDaySeconds: 0 })));
-  }, [lastSaveDate, projects, historicalLogs, currentUser]);
 
   useEffect(() => {
     const interval = setInterval(() => {
       const today = new Date().toDateString();
-      if (today !== lastSaveDate) {
-        commitDailyLogs();
-        setLastSaveDate(today);
+      if (today !== lastSaveDate) { 
+        commitDailyLogs(); 
+        setLastSaveDate(today); 
       }
-      setProjects(prevProjects => 
-        prevProjects.map(p => {
-          if (p.status === 'Running') {
-            return { ...p, currentDaySeconds: p.currentDaySeconds + 1 };
-          }
-          return p;
-        })
-      );
+      
+      const isAnyRunning = projectsRef.current.some(p => p.status === 'Running');
+      handleWakeLock(isAnyRunning);
+
+      setProjects(prev => prev.map(p => 
+        p.status === 'Running' ? { ...p, currentDaySeconds: p.currentDaySeconds + 1 } : p
+      ));
     }, 1000);
     return () => clearInterval(interval);
   }, [lastSaveDate, commitDailyLogs]);
 
-  const handleToggleTimer = (projectId: string) => {
-    setProjects(prev => prev.map(p => {
+  const handleToggleTimer = async (projectId: string) => {
+    if (!currentUser) return;
+    const target = projects.find(p => p.id === projectId);
+    if (!target) return;
+
+    const isRunning = target.status === 'Running';
+    const startTimeStamp = Date.now().toString();
+
+    const updatedProjects = projects.map(p => {
       if (p.id === projectId) {
-        const newStatus = p.status === 'Running' ? 'Active' : 'Running';
-        return { ...p, status: newStatus as any };
+        return { 
+          ...p, 
+          status: isRunning ? 'Active' : 'Running',
+          runningSince: isRunning ? null : startTimeStamp
+        };
       }
       if (p.status === 'Running') {
-        return { ...p, status: 'Active' as any };
+        return { ...p, status: 'Active', runningSince: null };
       }
       return p;
-    }));
+    });
+
+    setProjects(updatedProjects as any);
+
+    try {
+      for (const p of updatedProjects) {
+         await db.saveProject({
+           ...p,
+           userId: currentUser.id
+         });
+      }
+    } catch (e) {
+      console.error("Error al persistir cronómetro", e);
+    }
   };
 
-  const handleUpdateProject = async (updatedProject: Project) => {
-    setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
-    await db.saveProject(updatedProject);
-    setEditingProject(null);
-  };
-
-  const handleCreateProject = async (data: { name: string, category: string, color: string }) => {
+  const handleStartWithPreset = async (projectId: string, initialSeconds: number) => {
     if (!currentUser) return;
-    const newProject: Project = {
-      id: Math.random().toString(36).substr(2, 9),
-      userId: currentUser.id,
-      name: data.name || 'PROYECTO_SIN_TITULO',
-      category: data.category || 'General',
-      description: data.category,
-      color: data.color || VIBRANT_COLORS[0],
-      lastTracked: 'Recién',
-      usageLevel: 0,
-      totalHours: '0h',
-      status: 'Active',
-      department: 'GENERAL',
-      currentDaySeconds: 0
-    };
-    setProjects(prev => [...prev, newProject]);
-    await db.saveProject(newProject);
-    setIsModalOpen(false);
+    const startTimeStamp = Date.now().toString();
+    const updated = projects.map(p => {
+      if (p.id === projectId) {
+        return { ...p, status: 'Running', currentDaySeconds: initialSeconds, runningSince: startTimeStamp };
+      }
+      if (p.status === 'Running') return { ...p, status: 'Active', runningSince: null };
+      return p;
+    });
+    setProjects(updated as any);
+    try {
+      for (const p of updated) {
+        await db.saveProject({
+          ...p,
+          userId: currentUser.id
+        });
+      }
+      setIsStartWithTimeModalOpen(false);
+    } catch (e) {
+      alert("Error al iniciar con tiempo. Revisa la conexión con api.php");
+    }
   };
 
-  const formatTimer = (seconds: number) => {
+  const handleToggleHideProject = async (projectId: string) => {
+    if (!currentUser) return;
+    const target = projects.find(p => p.id === projectId);
+    if (!target) return;
+    
+    const newHiddenStatus = !target.isHiddenForUser;
+      
+    const updated = { ...target, userId: currentUser.id, isHiddenForUser: newHiddenStatus };
+    try {
+      await db.saveProject(updated);
+      loadUserData(currentUser.id);
+    } catch (e) {
+      alert("Error al ocultar proyecto.");
+    }
+  };
+
+  const handleManualTimeEntry = async (projectId: string, totalSeconds: number, dateStr: string) => {
+    if (!currentUser) return;
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+    
+    const normalizedDate = new Date(dateStr + 'T12:00:00').toDateString();
+    
+    const finalLog: DailyLog = { 
+      id: `MAN-${Math.random().toString(36).substr(2, 6).toUpperCase()}`, 
+      userId: currentUser.id, 
+      date: normalizedDate, 
+      projectId: projectId, 
+      projectName: project.name, 
+      durationSeconds: totalSeconds, 
+      status: 'MANUAL' 
+    };
+    try {
+      await db.saveLog(finalLog);
+      loadUserData(currentUser.id);
+      setIsManualModalOpen(false);
+    } catch (e) {
+      alert("Error al inyectar datos manuales.");
+    }
+  };
+
+  const handleDeleteLog = async (logId: string) => {
+    if (confirm('¿ELIMINAR ESTE MOVIMIENTO EN EL SERVIDOR?')) {
+      await db.deleteLog(logId);
+      if (currentUser) loadUserData(currentUser.id);
+    }
+  };
+
+  const handleReorderProjects = async (newOrder: string[]) => {
+    if (!currentUser) return;
+    const updatedUser = { ...currentUser, projectOrder: newOrder };
+    setCurrentUser(updatedUser);
+    localStorage.setItem('mod_tracker_session', JSON.stringify(updatedUser));
+    try {
+      await db.saveUser(updatedUser);
+    } catch (e) {}
+  };
+
+  const handleUpdateProject = async (data: any) => {
+    if (!editingProject || !currentUser) return;
+    const updatedProject: LocalProject = { 
+      ...editingProject, 
+      userId: currentUser.id,
+      name: data.name || editingProject.name, 
+      category: data.category || editingProject.category, 
+      color: data.color || editingProject.color
+    };
+    try {
+      await db.saveProject(updatedProject);
+      setEditingProject(null);
+      loadUserData(currentUser.id);
+    } catch (e) {
+      alert("Error al actualizar el proyecto. Verifica que el servidor MySQL acepte conexiones.");
+    }
+  };
+
+  const handleCreateProject = async (data: any) => {
+    if (!currentUser) return;
+    const isAdmin = currentUser.role === Role.ADMIN;
+    const newProject: LocalProject = { 
+      id: `PJ-${Math.random().toString(36).substr(2, 6).toUpperCase()}`, 
+      userId: currentUser.id,
+      creatorId: currentUser.id,
+      name: data.name || 'UNNAMED', 
+      category: data.category || 'General', 
+      color: data.color, 
+      lastTracked: 'Now', 
+      usageLevel: 0, 
+      totalHours: '0h', 
+      status: 'Active', 
+      department: isAdmin ? 'GLOBAL' : 'PRIVATE', 
+      currentDaySeconds: 0,
+      isGlobal: isAdmin,
+      isHiddenForUser: false,
+      runningSince: null,
+      hiddenBy: [],
+      isActive: true
+    };
+    
+    try {
+      await db.saveProject(newProject);
+      setIsModalOpen(false);
+      loadUserData(currentUser.id);
+    } catch (e) {
+      console.error(e);
+      alert("ERROR AL CREAR PROYECTO: Es posible que api.php no tenga los campos necesarios en la base de datos. Se ha intentado corregir automáticamente, por favor inténtalo de nuevo.");
+    }
+  };
+
+  const handleSearchResultClick = (type: 'USER' | 'PROJECT', item: any) => {
+    if (type === 'USER') {
+      setSelectedAdminUser(item);
+      setCurrentView(View.ADMIN_USERS);
+    } else {
+      setSelectedProjectId(item.id);
+      setCurrentView(View.ADMIN_PROJECTS);
+    }
+  };
+
+  const formatTimerShort = (seconds: number) => {
     const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
     const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
-    const s = (seconds % 60).toString().padStart(2, '0');
-    return `${h}:${m}:${s}`;
+    return `${h}:${m}`;
   };
 
-  if (!currentUser) {
-    return <LoginView onLogin={handleLogin} />;
-  }
+  if (!currentUser) return <LoginView onLogin={handleLogin} />;
 
   const getHeaderProps = () => {
     const totalDailySeconds = projects.reduce((acc, p) => acc + p.currentDaySeconds, 0);
     switch (currentView) {
-      case View.DASHBOARD:
-        return { title: 'Panel Control', activeTime: formatTimer(totalDailySeconds), actionLabel: 'Crear Nuevo' };
-      case View.PROJECT_LIST:
-        return { title: 'Proyectos', actionLabel: 'Nuevo Proyecto' };
-      case View.REPORTS:
-        return { title: 'Analítica', actionLabel: 'Sincronizar Logs' };
-      default:
-        return { title: 'MOD Tracker', actionLabel: 'Añadir' };
+      case View.DASHBOARD: return { title: 'Terminal', activeTime: formatTimerShort(totalDailySeconds), actionLabel: 'Sincronizar' };
+      case View.MOVEMENTS: return { title: 'Movimientos', actionLabel: 'Sincronizar' };
+      case View.REPORTS: return { title: 'Reportes', actionLabel: 'Sincronizar' };
+      default: return { title: 'MOD Tracker', actionLabel: 'Acción' };
     }
   };
 
   const renderView = () => {
+    if (selectedAdminUser && currentView === View.ADMIN_USERS) {
+       return <AdminUserDetailView user={selectedAdminUser} onBack={() => setSelectedAdminUser(null)} />;
+    }
     switch (currentView) {
-      case View.DASHBOARD:
-        return <DashboardGrid projects={projects} onToggleTimer={handleToggleTimer} onNewProject={() => setIsModalOpen(true)} />;
-      case View.PROJECT_LIST:
-        return <ProjectList projects={projects} onEditProject={setEditingProject} />;
-      case View.REPORTS:
-        return <Reports projects={projects} historicalLogs={historicalLogs} onManualCommit={commitDailyLogs} />;
-      default:
-        return <DashboardGrid projects={projects} onToggleTimer={handleToggleTimer} onNewProject={() => setIsModalOpen(true)} />;
+      case View.DASHBOARD: return (
+        <DashboardGrid 
+          projects={projects} 
+          currentUser={currentUser}
+          showHidden={showHidden}
+          onToggleTimer={handleToggleTimer} 
+          onStartWithTime={(id) => { setSelectedProjectId(id); setIsStartWithTimeModalOpen(true); }}
+          onToggleHide={handleToggleHideProject}
+          onToggleShowHidden={() => setShowHidden(!showHidden)}
+          onNewProject={() => setIsModalOpen(true)} 
+          onReorderProjects={handleReorderProjects}
+        />
+      );
+      case View.MOVEMENTS: return <MovementsView currentUser={currentUser} onDeleteLog={handleDeleteLog} />;
+      case View.PROJECT_LIST: return <ProjectList projects={projects} onEditProject={(p) => setEditingProject(p as LocalProject)} />;
+      case View.REPORTS: return <Reports projects={projects} historicalLogs={historicalLogs} onManualCommit={() => commitDailyLogs()} />;
+      case View.WEEKLY_HISTORY: return <WeeklyHistoryView currentUser={currentUser} />;
+      case View.ADMIN_STATS: return <AdminStatsView onUserSelect={(u) => { setSelectedAdminUser(u); setCurrentView(View.ADMIN_USERS); }} />;
+      case View.ADMIN_USERS: return <AdminView type="USERS" onUserSelect={(user) => setSelectedAdminUser(user)} />;
+      case View.ADMIN_PROJECTS: return <AdminView type="PROJECTS" onUserSelect={() => {}} externalSelectedId={selectedProjectId} />;
+      case View.PROFILE: return <ProfileView user={currentUser} />;
+      default: return null;
     }
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-mod-dark">
+    <div className="flex h-screen overflow-hidden bg-mod-dark relative">
       <Sidebar 
         currentView={currentView} 
-        onViewChange={setCurrentView} 
-        onNewProject={() => setIsModalOpen(true)} 
-        user={currentUser}
-        onLogout={handleLogout}
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        onViewChange={(v) => { 
+          setCurrentView(v); 
+          setSelectedAdminUser(null); 
+          setSelectedProjectId(null); 
+          setIsSidebarOpen(false);
+        }} 
+        onNewProject={() => { setIsModalOpen(true); setIsSidebarOpen(false); }} 
+        user={currentUser} 
+        onLogout={handleLogout} 
       />
-      <main className="flex-1 flex flex-col overflow-hidden">
-        <Header {...getHeaderProps()} onSearch={setSearchQuery} onActionButton={() => {
-          if (currentView === View.REPORTS) commitDailyLogs();
-          else setIsModalOpen(true);
-        }} />
+      <main className="flex-1 flex flex-col overflow-hidden w-full">
+        <Header 
+          {...getHeaderProps()} 
+          user={currentUser}
+          onMenuToggle={() => setIsSidebarOpen(!isSidebarOpen)}
+          onSearch={setSearchQuery} 
+          onResultClick={handleSearchResultClick}
+          onManualEntry={() => setIsManualModalOpen(true)}
+          onActionButton={() => {
+            if (currentView === View.DASHBOARD || currentView === View.MOVEMENTS || currentView === View.REPORTS) {
+              commitDailyLogs();
+            } else {
+              setIsModalOpen(true);
+            }
+          }} 
+        />
         <div className="flex-1 overflow-y-auto bg-background-dark">
           {renderView()}
         </div>
@@ -228,80 +444,125 @@ const App: React.FC = () => {
         <ProjectModal 
           project={editingProject} 
           onClose={() => { setIsModalOpen(false); setEditingProject(null); }}
-          onSave={(updated) => {
-            if (editingProject) handleUpdateProject(updated as Project);
-            else handleCreateProject(updated as any);
-          }}
+          onSave={(data) => editingProject ? handleUpdateProject(data) : handleCreateProject(data)}
+        />
+      )}
+
+      {isManualModalOpen && (
+        <ManualTimeModal 
+          projects={projects}
+          onClose={() => setIsManualModalOpen(false)}
+          onSave={(id, secs, date) => handleManualTimeEntry(id, secs, date || new Date().toISOString().split('T')[0])}
+          showDatePicker
+        />
+      )}
+
+      {isStartWithTimeModalOpen && selectedProjectId && (
+        <ManualTimeModal 
+          projects={projects.filter(p => p.id === selectedProjectId)}
+          onClose={() => setIsStartWithTimeModalOpen(false)}
+          onSave={(id, secs) => handleStartWithPreset(id, secs)}
+          title="Arrancar con Tiempo"
         />
       )}
     </div>
   );
 };
 
-const ProjectModal: React.FC<{ 
-  project: Project | null; 
-  onClose: () => void; 
-  onSave: (data: Partial<Project>) => void;
-}> = ({ project, onClose, onSave }) => {
-  const [formData, setFormData] = useState({
-    name: project?.name || '',
-    category: project?.category || '',
-    color: project?.color || VIBRANT_COLORS[0]
-  });
+const ManualTimeModal: React.FC<{ projects: Project[]; onClose: () => void; onSave: (id: string, secs: number, date?: string) => void; title?: string; showDatePicker?: boolean }> = ({ projects, onClose, onSave, title = "Inyección de Datos Manual", showDatePicker = false }) => {
+  const [selId, setSelId] = useState(projects[0]?.id || '');
+  const [hours, setHours] = useState('');
+  const [minutes, setMinutes] = useState('');
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const minInputRef = useRef<HTMLInputElement>(null);
 
-  const isEdit = !!project;
+  const handleHoursChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value.replace(/\D/g, '').slice(0, 2);
+    setHours(val);
+    if (val.length === 2) minInputRef.current?.focus();
+  };
+
+  const handleMinutesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let val = e.target.value.replace(/\D/g, '').slice(0, 2);
+    if (parseInt(val) > 59) val = '59';
+    setMinutes(val);
+  };
+
+  const handleSave = () => {
+    const h = parseInt(hours) || 0;
+    const m = parseInt(minutes) || 0;
+    if (h === 0 && m === 0) return;
+    onSave(selId, (h * 3600) + (m * 60), date);
+  };
 
   return (
-    <div className="fixed inset-0 bg-mod-dark/95 backdrop-blur-md z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-mod-card w-full max-w-md shadow-2xl overflow-hidden border border-white/20" onClick={e => e.stopPropagation()}>
-        <div className="p-8 border-b border-mod-border flex justify-between items-center bg-mod-dark">
-          <h3 className="text-lg font-bold uppercase tracking-widest">{isEdit ? 'Modificar Proyecto' : 'Inicializar Proyecto'}</h3>
-          <button onClick={onClose} className="text-slate-500 hover:text-white">
-            <span className="material-symbols-outlined">close</span>
+    <div className="fixed inset-0 bg-mod-dark/95 backdrop-blur-md z-[200] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-mod-card border border-white/20 w-full max-w-md p-8 shadow-[0_0_50px_rgba(0,163,224,0.1)]" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-8">
+          <h3 className="text-white font-black uppercase tracking-[0.3em] text-xs flex items-center gap-2">
+            <span className="material-symbols-outlined text-mod-blue">history_edu</span>
+            {title}
+          </h3>
+          <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors">
+             <span className="material-symbols-outlined">close</span>
           </button>
         </div>
-        <div className="p-8 space-y-6">
-          <div className="space-y-4">
+        
+        <div className="space-y-8">
+          <div>
+            <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">Nodo del Sistema</label>
+            <select value={selId} tabIndex={1} onChange={e=>setSelId(e.target.value)} className="w-full bg-mod-dark border border-mod-border text-white p-4 font-mono text-sm outline-none focus:border-mod-blue">
+              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-8">
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Identificador de Proyecto</label>
-              <input 
-                value={formData.name}
-                onChange={e => setFormData({...formData, name: e.target.value.toUpperCase().replace(/\s/g, '_')})}
-                className="w-full bg-mod-dark border border-mod-border text-white px-4 py-3 focus:border-white outline-none transition-all text-sm font-mono" 
-                placeholder="ej. REBRANDING_CORE" 
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Vertical / Categoría</label>
-              <input 
-                value={formData.category}
-                onChange={e => setFormData({...formData, category: e.target.value})}
-                className="w-full bg-mod-dark border border-mod-border text-white px-4 py-3 focus:border-white outline-none transition-all text-sm" 
-                placeholder="ej. Desarrollo UI" 
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Mapeo Vibrante (Color)</label>
-              <div className="grid grid-cols-5 gap-2">
-                {VIBRANT_COLORS.map(c => (
-                  <button 
-                    key={c}
-                    onClick={() => setFormData({...formData, color: c})}
-                    className={`size-8 ${c} border ${formData.color === c ? 'border-white scale-110' : 'border-transparent opacity-50'} hover:opacity-100 transition-all`}
-                  />
-                ))}
+              <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">Unidades Temporales (HH:MM)</label>
+              <div className="flex items-center gap-3">
+                <input autoFocus type="text" tabIndex={2} value={hours} onChange={handleHoursChange} placeholder="00" className="w-full bg-mod-dark border border-mod-border text-white text-center p-4 text-3xl font-mono focus:border-mod-blue outline-none" />
+                <span className="text-2xl font-mono text-mod-blue">:</span>
+                <input ref={minInputRef} type="text" tabIndex={3} value={minutes} onChange={handleMinutesChange} placeholder="00" className="w-full bg-mod-dark border border-mod-border text-white text-center p-4 text-3xl font-mono focus:border-mod-blue outline-none" />
               </div>
             </div>
+
+            {showDatePicker && (
+              <div>
+                <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">Fecha del Registro</label>
+                <input 
+                  type="date" 
+                  value={date} 
+                  tabIndex={4}
+                  max={new Date().toISOString().split('T')[0]}
+                  onChange={e => setDate(e.target.value)} 
+                  className="w-full h-[68px] bg-mod-dark border border-mod-border text-white text-center px-2 font-mono text-xs focus:border-mod-blue outline-none uppercase" 
+                />
+              </div>
+            )}
           </div>
-          <div className="pt-4 flex gap-4">
-            <button onClick={onClose} className="flex-1 border border-mod-border hover:bg-white/5 font-bold py-4 text-[10px] uppercase tracking-widest transition-colors">Cancelar</button>
-            <button 
-              onClick={() => onSave(isEdit ? { ...project, ...formData } : formData)}
-              className="flex-1 bg-white text-mod-dark font-bold py-4 text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all"
-            >
-              {isEdit ? 'Actualizar' : 'Inicializar'}
-            </button>
+
+          <button tabIndex={5} onClick={handleSave} className="w-full bg-white text-mod-dark py-5 font-black uppercase text-[10px] tracking-[0.4em] hover:bg-mod-blue hover:text-white transition-all shadow-xl active:scale-95">Inyectar en Base de Datos</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ProjectModal: React.FC<{ project: Project | null; onClose: () => void; onSave: (data: any) => void; }> = ({ project, onClose, onSave }) => {
+  const [formData, setFormData] = useState({ name: project?.name || '', category: project?.category || '', color: project?.color || VIBRANT_COLORS[0] });
+  return (
+    <div className="fixed inset-0 bg-mod-dark/95 backdrop-blur-md z-[200] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-mod-card border border-white/20 w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+        <h3 className="text-white font-black uppercase tracking-widest text-xs mb-6">{project ? 'Modificar' : 'Crear'} Unidad</h3>
+        <div className="space-y-4">
+          <input autoFocus value={formData.name} onChange={e=>setFormData({...formData, name: e.target.value.toUpperCase()})} className="w-full bg-mod-dark border border-mod-border text-white p-3 font-mono" placeholder="ID_UNIDAD" />
+          <input value={formData.category} onChange={e=>setFormData({...formData, category: e.target.value})} className="w-full bg-mod-dark border border-mod-border text-white p-3" placeholder="CATEGORÍA" />
+          <div className="grid grid-cols-5 gap-2">
+            {VIBRANT_COLORS.map(c => (
+              <button key={c} onClick={()=>setFormData({...formData, color: c})} className={`h-8 ${c} border ${formData.color === c ? 'border-white scale-110' : 'border-transparent opacity-50'} transition-all`} />
+            ))}
           </div>
+          <button onClick={() => onSave(formData)} className="w-full bg-white text-mod-dark py-4 font-black uppercase text-[10px] tracking-widest">Confirmar</button>
         </div>
       </div>
     </div>
