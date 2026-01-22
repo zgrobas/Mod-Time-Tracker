@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Project, DailyLog, ActivityLog } from '../types';
 import { getIntelligentInsights } from '../services/geminiService';
@@ -7,6 +6,13 @@ interface ReportsProps {
   projects: Project[];
   historicalLogs: DailyLog[];
   onManualCommit: () => void;
+}
+
+interface GroupedDailyLog {
+  date: string;
+  projectId: string;
+  projectName: string;
+  totalDurationSeconds: number;
 }
 
 const Reports: React.FC<ReportsProps> = ({ projects, historicalLogs, onManualCommit }) => {
@@ -67,6 +73,30 @@ const Reports: React.FC<ReportsProps> = ({ projects, historicalLogs, onManualCom
     link.click();
     document.body.removeChild(link);
   };
+
+  // Agrupar movimientos de un mismo día y proyecto
+  const groupedHistory = useMemo(() => {
+    const groups: Record<string, GroupedDailyLog> = {};
+    historicalLogs.forEach(log => {
+      const key = `${log.date}_${log.projectId}`;
+      if (!groups[key]) {
+        groups[key] = {
+          date: log.date,
+          projectId: log.projectId,
+          projectName: log.projectName,
+          totalDurationSeconds: 0
+        };
+      }
+      groups[key].totalDurationSeconds += log.durationSeconds;
+    });
+    return Object.values(groups).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [historicalLogs]);
+
+  // Lista única de fechas para manejar el sombreado alterno (zebra) por día
+  const uniqueDates = useMemo(() => {
+    const dates = Array.from(new Set(groupedHistory.map(g => g.date)));
+    return dates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+  }, [groupedHistory]);
 
   return (
     <div className="p-10 max-w-[1400px] mx-auto">
@@ -152,8 +182,9 @@ const Reports: React.FC<ReportsProps> = ({ projects, historicalLogs, onManualCom
       </div>
 
       <div className="bg-mod-card border border-mod-border overflow-hidden">
-        <div className="p-6 bg-mod-dark border-b border-mod-border">
-          <h3 className="text-white text-xs font-black uppercase tracking-[0.3em]">Historial Operativo</h3>
+        <div className="p-6 bg-mod-dark border-b border-mod-border flex items-center justify-between">
+          <h3 className="text-white text-xs font-black uppercase tracking-[0.3em]">Historial Operativo Agrupado</h3>
+          <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Resumen por Día y Proyecto</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -161,28 +192,41 @@ const Reports: React.FC<ReportsProps> = ({ projects, historicalLogs, onManualCom
               <tr className="bg-mod-dark text-slate-500 uppercase font-bold tracking-widest border-b border-mod-border">
                 <th className="px-8 py-4">Fecha Índice</th>
                 <th className="px-8 py-4">Identificador Proyecto</th>
-                <th className="px-8 py-4">Uptime Total</th>
-                <th className="px-8 py-4">Estado</th>
+                <th className="px-8 py-4">Uptime Acumulado</th>
+                <th className="px-8 py-4">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-mod-border">
-              {historicalLogs.slice().reverse().map((log) => (
-                <tr key={log.id} className="hover:bg-white/5 transition-colors group">
-                  <td className="px-8 py-5 text-slate-500 font-mono">{log.date.toUpperCase()}</td>
-                  <td className="px-8 py-5">
-                    <span className="text-white font-bold uppercase tracking-tight">{log.projectName}</span>
-                  </td>
-                  <td className="px-8 py-5 font-mono text-mod-blue">
-                    {formatSecondsFull(log.durationSeconds)}
-                  </td>
-                  <td className="px-8 py-5">
-                    <span className="px-2 py-0.5 border border-emerald-500/50 text-emerald-400 text-[10px] font-black uppercase tracking-widest bg-emerald-500/5">
-                      SINCRONIZADO
-                    </span>
-                  </td>
-                </tr>
-              ))}
-              {historicalLogs.length === 0 && (
+              {groupedHistory.map((log, index) => {
+                const dateIndex = uniqueDates.indexOf(log.date);
+                const isEvenDay = dateIndex % 2 === 0;
+                
+                return (
+                  <tr 
+                    key={`${log.date}_${log.projectId}`} 
+                    className={`transition-colors group ${isEvenDay ? 'bg-white/[0.03]' : 'bg-transparent'} hover:bg-mod-blue/5`}
+                  >
+                    <td className="px-8 py-5 text-slate-400 font-mono text-[11px]">
+                       <div className="flex items-center gap-3">
+                         <span className={`w-1 h-3 ${isEvenDay ? 'bg-mod-blue' : 'bg-slate-700'} opacity-50`}></span>
+                         {log.date.toUpperCase()}
+                       </div>
+                    </td>
+                    <td className="px-8 py-5">
+                      <span className="text-white font-black uppercase tracking-tight text-[13px]">{log.projectName}</span>
+                    </td>
+                    <td className="px-8 py-5 font-mono text-mod-blue font-black text-[13px]">
+                      {formatSecondsFull(log.totalDurationSeconds)}
+                    </td>
+                    <td className="px-8 py-5">
+                      <span className="px-2 py-0.5 border border-white/10 text-slate-500 text-[9px] font-black uppercase tracking-widest bg-white/5">
+                        REGISTRADO
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+              {groupedHistory.length === 0 && (
                 <tr>
                   <td colSpan={4} className="px-8 py-12 text-center text-slate-600 uppercase tracking-widest italic text-[10px]">Sin datos históricos indexados.</td>
                 </tr>

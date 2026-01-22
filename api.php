@@ -113,6 +113,7 @@ switch($action) {
 
     case 'get_projects':
         $requestUserId = $_GET['userId'] ?? 'none';
+        // Regla de privacidad: Solo globales, los creados por el usuario o si es ADMIN
         $stmt = $pdo->prepare("
             SELECT 
                 p.*, 
@@ -121,7 +122,12 @@ switch($action) {
                 up.hidden_by_user
             FROM projects p
             LEFT JOIN user_projects up ON p.id = up.project_id AND up.user_id = ?
-            WHERE p.is_active = 1 OR p.creator_id = ? OR (SELECT role FROM users WHERE id = ?) = 'ADMIN'
+            WHERE p.is_active = 1 
+            AND (
+                p.is_global = 1 
+                OR p.creator_id = ? 
+                OR (SELECT role FROM users WHERE id = ?) = 'ADMIN'
+            )
         ");
         $stmt->execute([$requestUserId, $requestUserId, $requestUserId]);
         echo json_encode($stmt->fetchAll());
@@ -156,6 +162,13 @@ switch($action) {
         }
         
         $pdo->commit();
+        echo json_encode(["status" => "ok"]);
+        break;
+
+    case 'update_log':
+        $data = json_decode(file_get_contents('php://input'), true);
+        $stmt = $pdo->prepare("UPDATE logs SET duration_seconds = ?, date_str = ? WHERE id = ?");
+        $stmt->execute([$data['durationSeconds'], $data['date'], $data['id']]);
         echo json_encode(["status" => "ok"]);
         break;
 

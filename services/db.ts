@@ -130,6 +130,10 @@ export class DBService {
     return this.request('save_log', 'POST', log);
   }
 
+  async updateLog(log: any): Promise<void> {
+    return this.request('update_log', 'POST', log);
+  }
+
   async deleteLog(id: string): Promise<void> {
     return this.request('delete_log', 'DELETE', id);
   }
