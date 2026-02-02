@@ -6,6 +6,7 @@ import { User, Project, Role, DailyLog } from '../types';
 interface AdminViewProps {
   type: 'USERS' | 'PROJECTS';
   onUserSelect: (user: User) => void;
+  onProjectSelect?: (project: Project) => void;
   externalSelectedId?: string | null;
 }
 
@@ -16,7 +17,7 @@ const VIBRANT_COLORS = [
   'vibrant-amber', 'vibrant-violet', 'vibrant-lime'
 ];
 
-const AdminView: React.FC<AdminViewProps> = ({ type, onUserSelect, externalSelectedId }) => {
+const AdminView: React.FC<AdminViewProps> = ({ type, onUserSelect, onProjectSelect, externalSelectedId }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [logs, setLogs] = useState<DailyLog[]>([]);
@@ -321,140 +322,51 @@ const AdminView: React.FC<AdminViewProps> = ({ type, onUserSelect, externalSelec
             <span className="material-symbols-outlined text-mod-blue text-4xl">inventory_2</span>
             <div>
               <h2 className="text-4xl font-black tracking-tighter text-white uppercase italic">SISTEMA <span className="text-slate-500 font-light not-italic">DE PROYECTOS</span></h2>
-              <p className="text-[10px] text-mod-blue/70 font-bold uppercase tracking-[0.3em] mt-1">Supervisión Global de Unidades de Trabajo</p>
+              <p className="text-[10px] text-mod-blue/70 font-bold uppercase tracking-[0.3em] mt-1">Listado de unidades · Clic para ver detalle</p>
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-1 lg:grid-cols-2 gap-8 transition-all duration-500">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 transition-all duration-500">
           {projects.map(project => {
-            const isExpanded = expandedProjectId === project.id;
             const projectLogs = logs.filter(l => l.projectId === project.id);
             const totalSeconds = projectLogs.reduce((acc, l) => acc + l.durationSeconds, 0);
-            const projectOwner = users.find(u => u.id === project.userId);
-            
-            const userSummaries = users.map(user => {
-              const time = projectLogs
-                .filter(l => l.userId === user.id)
-                .reduce((acc, l) => acc + l.durationSeconds, 0);
-              return { user, time };
-            }).filter(u => u.time > 0).sort((a, b) => b.time - a.time);
+            const projectOwner = users.find(u => u.id === project.creatorId || u.id === project.userId);
+            const userCount = new Set(projectLogs.map(l => l.userId)).size;
 
             return (
-              <div 
-                key={project.id} 
-                className={`transition-all duration-500 ease-in-out bg-mod-card border ${isExpanded ? 'col-span-full border-mod-blue shadow-[0_0_50px_rgba(0,163,224,0.1)]' : 'border-mod-border hover:border-white/20 cursor-pointer hover:bg-white/[0.02]'} ${!project.isActive ? 'grayscale opacity-70' : ''}`}
-                onClick={() => !isExpanded && setExpandedProjectId(project.id)}
+              <div
+                key={project.id}
+                onClick={() => onProjectSelect?.(project)}
+                className={`bg-mod-card border border-mod-border hover:border-mod-blue cursor-pointer hover:bg-white/[0.02] transition-all duration-300 group ${!project.isActive ? 'grayscale opacity-70' : ''}`}
               >
-                {/* Nueva Maquetación: Nombre Arriba Full Width */}
-                <div className={`p-8 flex flex-col gap-6 ${isExpanded ? 'bg-mod-dark border-b border-mod-border' : ''}`}>
-                  <div className="flex items-start gap-6 w-full">
-                    <div className={`w-14 h-14 flex-shrink-0 ${project.color} border border-white/20 flex items-center justify-center relative mt-1`}>
-                       <span className="material-symbols-outlined text-white/50 text-2xl">layers</span>
-                       {project.status === 'Running' && (
-                         <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-white animate-ping rounded-full"></div>
-                       )}
+                <div className="p-6 flex flex-col gap-4">
+                  <div className="flex items-start gap-4">
+                    <div className={`w-12 h-12 flex-shrink-0 ${project.color} border border-white/20 flex items-center justify-center`}>
+                      <span className="material-symbols-outlined text-white/50 text-xl">layers</span>
                     </div>
-                    <div className="flex-1">
-                      <h3 className={`text-2xl lg:text-3xl font-black text-white uppercase tracking-tighter break-words leading-none ${!project.isActive ? 'line-through opacity-50' : ''}`} title={project.name}>{project.name}</h3>
-                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.4em] mt-2">{project.category} | ID: {project.id}</p>
-                      {!project.isActive && <p className="text-[8px] text-red-500 font-black uppercase mt-1">INACTIVO - OCULTO PARA USUARIOS</p>}
+                    <div className="flex-1 min-w-0">
+                      <h3 className={`text-lg font-black text-white uppercase tracking-tighter truncate ${!project.isActive ? 'line-through opacity-50' : ''}`}>{project.name}</h3>
+                      <p className="text-[9px] text-slate-500 uppercase tracking-widest mt-1">{project.category}</p>
+                      {!project.isActive && <p className="text-[8px] text-red-500 font-black uppercase mt-1">INACTIVO</p>}
                     </div>
+                    <span className="material-symbols-outlined text-slate-600 group-hover:text-mod-blue transition-colors">chevron_right</span>
                   </div>
-
-                  {/* Fila Inferior: Información y Estadísticas */}
-                  <div className="flex flex-wrap items-center justify-between gap-6 pt-6 border-t border-white/5">
-                     <div className="flex gap-10 items-center">
-                        <div className="text-left">
-                           <p className="text-slate-500 text-[9px] font-black uppercase tracking-widest mb-1.5">Inversión Total</p>
-                           <p className={`text-xl font-mono font-black ${isExpanded ? 'text-mod-blue' : 'text-white'}`}>{formatTime(totalSeconds)}</p>
-                        </div>
-                        <div className="h-10 w-px bg-mod-border"></div>
-                        <div className="text-left">
-                           <p className="text-slate-500 text-[9px] font-black uppercase tracking-widest mb-1.5">Propiedad</p>
-                           <p className="text-xl text-white font-black font-mono truncate max-w-[150px]">{projectOwner?.username || 'SISTEMA'}</p>
-                        </div>
-                     </div>
-
-                     {isExpanded && (
-                        <div className="flex gap-2">
-                           <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleToggleProjectActive(project);
-                            }}
-                            className={`w-10 h-10 flex items-center justify-center border transition-all ${project.isActive ? 'border-mod-border text-slate-500 hover:border-red-500 hover:text-red-500' : 'border-mod-blue text-mod-blue hover:bg-mod-blue hover:text-white'}`}
-                            title={project.isActive ? "Desactivar (Ocultar a usuarios)" : "Activar (Mostrar a usuarios)"}
-                          >
-                            <span className="material-symbols-outlined">{project.isActive ? 'visibility_off' : 'visibility'}</span>
-                          </button>
-                           <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingProject(project);
-                              setProjectFormData({ name: project.name, category: project.category, color: project.color });
-                              setShowProjectModal(true);
-                            }}
-                            className="w-10 h-10 flex items-center justify-center border border-mod-border hover:border-mod-blue transition-all text-slate-500 hover:text-mod-blue"
-                          >
-                            <span className="material-symbols-outlined">edit</span>
-                          </button>
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteProject(project);
-                            }}
-                            className="w-10 h-10 flex items-center justify-center border border-mod-border hover:border-red-600 hover:bg-red-600 hover:text-white transition-all text-slate-500"
-                          >
-                            <span className="material-symbols-outlined">delete</span>
-                          </button>
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); setExpandedProjectId(null); }}
-                            className="w-10 h-10 flex items-center justify-center border border-mod-border hover:border-white transition-all text-slate-500 hover:text-white"
-                          >
-                            <span className="material-symbols-outlined">close</span>
-                          </button>
-                        </div>
-                     )}
+                  <div className="flex items-center justify-between pt-3 border-t border-mod-border">
+                    <div>
+                      <p className="text-slate-500 text-[8px] font-black uppercase tracking-widest mb-0.5">Tiempo total</p>
+                      <p className="text-mod-blue font-mono font-bold text-sm">{formatTime(totalSeconds)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-slate-500 text-[8px] font-black uppercase tracking-widest mb-0.5">Operadores</p>
+                      <p className="text-white font-mono font-bold text-sm">{userCount}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-slate-500 text-[8px] font-black uppercase tracking-widest mb-0.5">Propietario</p>
+                      <p className="text-white font-bold text-[10px] uppercase truncate max-w-[80px]">{projectOwner?.username ?? '—'}</p>
+                    </div>
                   </div>
                 </div>
-
-                {isExpanded && (
-                  <div className="p-8 animate-in slide-in-from-top duration-500">
-                    <div className="mb-6 flex items-center justify-between border-b border-mod-border pb-4">
-                       <h4 className="text-[10px] text-white font-black uppercase tracking-[0.4em] flex items-center gap-2">
-                          <span className="material-symbols-outlined text-sm">groups</span>
-                          Participación del Personal
-                       </h4>
-                       <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Actividad Global Detectada</span>
-                    </div>
-                    
-                    <div className="space-y-6">
-                      {userSummaries.map(({ user, time }, i) => (
-                        <div key={user.id} className="group/user cursor-pointer" onClick={() => onUserSelect(user)}>
-                          <div className="flex justify-between items-end text-[10px] font-bold uppercase tracking-widest mb-2">
-                            <div className="flex items-center gap-3">
-                              <img src={`https://api.dicebear.com/7.x/pixel-art/svg?seed=${user.avatarSeed}`} className="w-8 h-8 grayscale group-hover/user:grayscale-0 border border-mod-border" />
-                              <span className="text-slate-400 group-hover/user:text-white transition-colors">{user.username}</span>
-                            </div>
-                            <span className="text-mod-blue font-mono">{formatTime(time)}</span>
-                          </div>
-                          <div className="h-1 bg-mod-dark border border-mod-border w-full overflow-hidden">
-                            <div 
-                              className="h-full bg-mod-blue transition-all duration-1000 shadow-[0_0_10px_rgba(0,163,224,0.3)]" 
-                              style={{ width: `${(time / totalSeconds) * 100}%` }}
-                            ></div>
-                          </div>
-                        </div>
-                      ))}
-                      {userSummaries.length === 0 && (
-                        <div className="py-10 text-center opacity-30 italic text-[10px] uppercase tracking-widest text-slate-500">
-                           No se han registrado sesiones de tiempo en esta unidad todavía.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
               </div>
             );
           })}

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Project, User, Role } from '../types';
 
 interface DashboardGridProps {
-  projects: (Project & { sessionOrigin?: string; isHiddenForUser?: boolean })[];
+  projects: (Project & { sessionOrigin?: string; isHiddenForUser?: boolean; sessionComment?: string })[];
   currentUser: User;
   showHidden: boolean;
   onToggleTimer: (projectId: string) => void;
@@ -11,6 +11,9 @@ interface DashboardGridProps {
   onToggleShowHidden: () => void;
   onNewProject: () => void;
   onReorderProjects: (newOrder: string[]) => void;
+  onCommentChange?: (projectId: string, sessionComment: string) => void;
+  onResetProject?: (projectId: string) => void;
+  onAdjustTimer?: (projectId: string, deltaSeconds: number) => void;
 }
 
 const DashboardGrid: React.FC<DashboardGridProps> = ({ 
@@ -22,10 +25,14 @@ const DashboardGrid: React.FC<DashboardGridProps> = ({
   onToggleHide, 
   onToggleShowHidden, 
   onNewProject,
-  onReorderProjects
+  onReorderProjects,
+  onCommentChange,
+  onResetProject,
+  onAdjustTimer
 }) => {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [localOrder, setLocalOrder] = useState<string[] | null>(null);
+  const [commentFocusedId, setCommentFocusedId] = useState<string | null>(null);
   const isAdmin = currentUser.role === Role.ADMIN;
 
   const formatTimerWithSeconds = (seconds: number, isRunning: boolean) => {
@@ -162,12 +169,57 @@ const DashboardGrid: React.FC<DashboardGridProps> = ({
                 <p className="text-[7px] lg:text-[9px] xl:text-[10px] font-bold uppercase opacity-60 truncate">{project.category}</p>
               </div>
 
-              <div className="space-y-1 lg:space-y-2 xl:space-y-4 pointer-events-none min-h-0 flex flex-col justify-end">
-                <div className="text-base lg:text-xl xl:text-4xl font-mono font-bold tracking-tighter leading-tight overflow-hidden">
-                  {formatTimerWithSeconds(project.currentDaySeconds, isRunning)}
+              {/* Comentario de sesión: solo cuando el tiempo no es cero (iniciado o pausado) */}
+              {(project.currentDaySeconds > 0) && onCommentChange && (
+                <div className="min-h-0 py-1 pointer-events-auto" onClick={e => e.stopPropagation()}>
+                  <input
+                    type="text"
+                    value={(project as Project & { sessionComment?: string }).sessionComment ?? ''}
+                    onChange={e => onCommentChange(project.id, e.target.value)}
+                    onFocus={() => setCommentFocusedId(project.id)}
+                    onBlur={() => setCommentFocusedId(null)}
+                    placeholder="Comentario..."
+                    className={`w-full text-[7px] lg:text-[8px] xl:text-[9px] font-medium px-2 py-1 border bg-black/10 placeholder:opacity-50 outline-none ${isLight ? 'border-black/30 text-black placeholder:text-black/50' : 'border-white/20 text-white placeholder:text-white/50'}`}
+                  />
                 </div>
-                <div className="h-0.5 w-full bg-black/10">
-                   <div className={`h-full bg-current transition-all duration-300 ${isRunning ? 'w-full opacity-100' : 'w-0 opacity-0'}`}></div>
+              )}
+
+              <div className={`space-y-1 lg:space-y-2 xl:space-y-4 min-h-0 flex flex-col justify-end ${commentFocusedId === project.id ? '' : 'pointer-events-none'}`}>
+                <div className="flex items-center gap-1 lg:gap-2 flex-wrap">
+                  <div className="text-base lg:text-xl xl:text-4xl font-mono font-bold tracking-tighter leading-tight overflow-hidden">
+                    {formatTimerWithSeconds(project.currentDaySeconds, isRunning)}
+                  </div>
+                  {(project.currentDaySeconds > 0) && onAdjustTimer && (
+                    <div className="flex items-center gap-0.5 pointer-events-auto" onClick={e => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => onAdjustTimer(project.id, -60)}
+                        className={`w-6 h-6 lg:w-7 lg:h-7 flex items-center justify-center border text-xs font-black ${isLight ? 'border-black/30 hover:bg-black hover:text-white' : 'border-white/30 hover:bg-white hover:text-mod-dark'}`}
+                        title="−1 min"
+                      >−</button>
+                      <button
+                        type="button"
+                        onClick={() => onAdjustTimer(project.id, 60)}
+                        className={`w-6 h-6 lg:w-7 lg:h-7 flex items-center justify-center border text-xs font-black ${isLight ? 'border-black/30 hover:bg-black hover:text-white' : 'border-white/30 hover:bg-white hover:text-mod-dark'}`}
+                        title="+1 min"
+                      >+</button>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="h-0.5 flex-1 bg-black/10">
+                    <div className={`h-full bg-current transition-all duration-300 ${isRunning ? 'w-full opacity-100' : 'w-0 opacity-0'}`}></div>
+                  </div>
+                  {(project.currentDaySeconds > 0) && onResetProject && (
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); onResetProject(project.id); }}
+                      className={`pointer-events-auto shrink-0 px-2 py-1 text-[7px] lg:text-[8px] font-black uppercase border ${isLight ? 'border-black/30 hover:bg-black hover:text-white' : 'border-white/30 hover:bg-white hover:text-mod-dark'}`}
+                      title="Poner contador a cero"
+                    >
+                      Reset
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

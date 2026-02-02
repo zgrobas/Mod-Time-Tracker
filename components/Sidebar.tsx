@@ -15,16 +15,29 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, isOpen, onClose, onViewC
   const isAdmin = user.role === Role.ADMIN;
   
   const navItems = [
-    { id: View.DASHBOARD, label: 'Terminal', icon: 'terminal', role: 'all' },
-    { id: View.MOVEMENTS, label: 'Movimientos', icon: 'list_alt', role: 'all' },
-    { id: View.REPORTS, label: 'Mis Reportes', icon: 'analytics', role: 'all' },
-    { id: View.WEEKLY_HISTORY, label: 'Historial', icon: 'history', role: 'all' },
-    { id: View.ADMIN_STATS, label: 'Estadísticas', icon: 'monitoring', role: 'ADMIN' },
-    { id: View.ADMIN_USERS, label: 'Operadores', icon: 'group', role: 'ADMIN' },
-    { id: View.ADMIN_PROJECTS, label: 'Proyectos Global', icon: 'layers', role: 'ADMIN' },
+    { id: View.DASHBOARD, label: 'Terminal', icon: 'terminal', role: 'all' as const },
+    { id: View.MOVEMENTS, label: 'Movimientos', icon: 'list_alt', role: 'all' as const },
+    { id: View.REPORTS, label: 'Mis Reportes', icon: 'analytics', role: 'all' as const },
+    { id: View.WEEKLY_HISTORY, label: 'Historial', icon: 'history', role: 'all' as const },
+    { id: View.ADMIN_DASHBOARD, label: 'Panel Global', icon: 'dashboard', role: 'ADMIN' as const },
+    { id: View.ADMIN_USERS, label: 'Operadores', icon: 'group', role: 'ADMIN' as const },
+    { id: View.ADMIN_PROJECTS, label: 'Proyectos Global', icon: 'layers', role: 'ADMIN' as const },
+    { id: View.ADMIN_STATS, label: 'Estadísticas', icon: 'monitoring', role: 'ADMIN' as const },
   ];
 
-  const filteredNav = navItems.filter(item => item.role === 'all' || (item.role === 'ADMIN' && isAdmin));
+  const adminHiddenViews = [View.DASHBOARD, View.ADMIN_STATS, View.REPORTS];
+  const filteredNav = navItems
+    .filter(item => {
+      const roleMatch = item.role === 'all' || (item.role === 'ADMIN' && isAdmin);
+      const notHiddenForAdmin = !isAdmin || !adminHiddenViews.includes(item.id);
+      return roleMatch && notHiddenForAdmin;
+    })
+    .sort((a, b) => {
+      if (!isAdmin) return 0;
+      if (a.id === View.ADMIN_DASHBOARD) return -1;
+      if (b.id === View.ADMIN_DASHBOARD) return 1;
+      return 0;
+    });
 
   return (
     <>

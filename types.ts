@@ -3,6 +3,7 @@ export enum View {
   DASHBOARD = 'DASHBOARD',
   PROJECT_LIST = 'PROJECT_LIST',
   REPORTS = 'REPORTS',
+  ADMIN_DASHBOARD = 'ADMIN_DASHBOARD',
   ADMIN_USERS = 'ADMIN_USERS',
   ADMIN_PROJECTS = 'ADMIN_PROJECTS',
   ADMIN_USER_DETAIL = 'ADMIN_USER_DETAIL',
@@ -46,6 +47,7 @@ export interface Project {
   hiddenBy: string[];
   isActive?: boolean;
   isHiddenForUser?: boolean;
+  sessionComment?: string;
 }
 
 export interface DailyLog {
@@ -56,6 +58,20 @@ export interface DailyLog {
   projectName: string;
   durationSeconds: number;
   status: 'NORMAL' | 'PRESET' | 'MANUAL';
+  comment?: string;
+}
+
+export interface LogModificationRecord {
+  id: string;
+  log_id: string;
+  modified_at: string;
+  modified_by_user_id: string;
+  old_duration_seconds: number;
+  new_duration_seconds: number;
+  old_date_str: string;
+  new_date_str: string;
+  old_comment: string | null;
+  new_comment: string | null;
 }
 
 export interface ActivityLog {

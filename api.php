@@ -70,9 +70,11 @@ try {
         project_id VARCHAR(50),
         running_since VARCHAR(50) NULL, 
         current_day_seconds INT DEFAULT 0,
+        session_comment VARCHAR(500) NULL,
         hidden_by_user TINYINT(1) DEFAULT 0,
         PRIMARY KEY (user_id, project_id)
     ) ENGINE=InnoDB;");
+    try { $pdo->exec("ALTER TABLE user_projects ADD COLUMN session_comment VARCHAR(500) NULL AFTER current_day_seconds"); } catch (Exception $e) {}
 
     // 4. Tabla de Logs Históricos
     $pdo->exec("CREATE TABLE IF NOT EXISTS logs (
@@ -83,7 +85,24 @@ try {
         date_str VARCHAR(50), 
         duration_seconds INT, 
         status VARCHAR(50), 
+        comment TEXT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB;");
+    try { $pdo->exec("ALTER TABLE logs ADD COLUMN comment TEXT NULL AFTER status"); } catch (Exception $e) {}
+
+    // 5. Historial de modificaciones de logs (para que Admin vea ediciones)
+    $pdo->exec("CREATE TABLE IF NOT EXISTS log_modification_history (
+        id VARCHAR(50) PRIMARY KEY,
+        log_id VARCHAR(50) NOT NULL,
+        modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        modified_by_user_id VARCHAR(50) NOT NULL,
+        old_duration_seconds INT NOT NULL,
+        new_duration_seconds INT NOT NULL,
+        old_date_str VARCHAR(50) NOT NULL,
+        new_date_str VARCHAR(50) NOT NULL,
+        old_comment TEXT NULL,
+        new_comment TEXT NULL,
+        INDEX idx_log_id (log_id)
     ) ENGINE=InnoDB;");
 
     // Usuario Admin por defecto
@@ -115,23 +134,20 @@ switch($action) {
 
     case 'get_projects':
         $requestUserId = $_GET['userId'] ?? 'none';
-        // Regla de privacidad: Solo globales, los creados por el usuario o si es ADMIN
+        // Terminal: todos los usuarios ven todos los proyectos activos; el estado (cronómetro, oculto) es por usuario vía user_projects
         $stmt = $pdo->prepare("
             SELECT 
                 p.*, 
                 up.running_since, 
                 up.current_day_seconds,
+                up.session_comment,
                 up.hidden_by_user
             FROM projects p
             LEFT JOIN user_projects up ON p.id = up.project_id AND up.user_id = ?
-            WHERE p.is_active = 1 
-            AND (
-                p.is_global = 1 
-                OR p.creator_id = ? 
-                OR (SELECT role FROM users WHERE id = ?) = 'ADMIN'
-            )
+            WHERE p.is_active = 1
+            ORDER BY p.name
         ");
-        $stmt->execute([$requestUserId, $requestUserId, $requestUserId]);
+        $stmt->execute([$requestUserId]);
         echo json_encode($stmt->fetchAll());
         break;
 
@@ -153,12 +169,14 @@ switch($action) {
         ]);
 
         if ($userId) {
-            $stmtUP = $pdo->prepare("INSERT INTO user_projects (user_id, project_id, running_since, current_day_seconds, hidden_by_user) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE running_since=VALUES(running_since), current_day_seconds=VALUES(current_day_seconds), hidden_by_user=VALUES(hidden_by_user)");
+            // running_since=VALUES(running_since) para que null pare el cronómetro (reset/pausa)
+            $stmtUP = $pdo->prepare("INSERT INTO user_projects (user_id, project_id, running_since, current_day_seconds, session_comment, hidden_by_user) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE running_since=VALUES(running_since), current_day_seconds=VALUES(current_day_seconds), session_comment=COALESCE(VALUES(session_comment), session_comment), hidden_by_user=VALUES(hidden_by_user)");
             $stmtUP->execute([
                 $userId,
                 $data['id'],
                 $data['runningSince'] ?? null,
                 $data['currentDaySeconds'] ?? 0,
+                $data['sessionComment'] ?? null,
                 isset($data['isHiddenForUser']) ? ($data['isHiddenForUser'] ? 1 : 0) : 0
             ]);
         }
@@ -169,8 +187,22 @@ switch($action) {
 
     case 'update_log':
         $data = json_decode(file_get_contents('php://input'), true);
-        $stmt = $pdo->prepare("UPDATE logs SET duration_seconds = ?, date_str = ? WHERE id = ?");
-        $stmt->execute([$data['durationSeconds'], $data['date'], $data['id']]);
+        $logId = $data['id'] ?? '';
+        $newDuration = (int)($data['durationSeconds'] ?? 0);
+        $newDate = $data['date'] ?? '';
+        $newComment = $data['comment'] ?? null;
+        $modifiedByUserId = $data['modifiedByUserId'] ?? null;
+        if (!$logId) { echo json_encode(["error" => "ID_REQUIRED"]); break; }
+        $current = $pdo->prepare("SELECT duration_seconds, date_str, comment FROM logs WHERE id = ?");
+        $current->execute([$logId]);
+        $row = $current->fetch(PDO::FETCH_ASSOC);
+        if ($row && $modifiedByUserId) {
+            $histId = 'HIST-' . $logId . '-' . time();
+            $ins = $pdo->prepare("INSERT INTO log_modification_history (id, log_id, modified_by_user_id, old_duration_seconds, new_duration_seconds, old_date_str, new_date_str, old_comment, new_comment) VALUES (?,?,?,?,?,?,?,?,?)");
+            $ins->execute([$histId, $logId, $modifiedByUserId, (int)$row['duration_seconds'], $newDuration, $row['date_str'], $newDate, $row['comment'], $newComment]);
+        }
+        $stmt = $pdo->prepare("UPDATE logs SET duration_seconds = ?, date_str = ?, comment = ? WHERE id = ?");
+        $stmt->execute([$newDuration, $newDate, $newComment, $logId]);
         echo json_encode(["status" => "ok"]);
         break;
 
@@ -201,8 +233,8 @@ switch($action) {
 
     case 'save_log':
         $data = json_decode(file_get_contents('php://input'), true);
-        $stmt = $pdo->prepare("INSERT INTO logs (id, user_id, project_id, project_name, date_str, duration_seconds, status) VALUES (?,?,?,?,?,?,?)");
-        $stmt->execute([$data['id'], $data['userId'], $data['projectId'], $data['projectName'], $data['date'], $data['durationSeconds'], $data['status']]);
+        $stmt = $pdo->prepare("INSERT INTO logs (id, user_id, project_id, project_name, date_str, duration_seconds, status, comment) VALUES (?,?,?,?,?,?,?,?)");
+        $stmt->execute([$data['id'], $data['userId'], $data['projectId'], $data['projectName'], $data['date'], $data['durationSeconds'], $data['status'], $data['comment'] ?? null]);
         echo json_encode(["status" => "ok"]);
         break;
 
@@ -211,6 +243,14 @@ switch($action) {
         $stmt = $pdo->prepare("DELETE FROM logs WHERE id = ?");
         $stmt->execute([$id]);
         echo json_encode(["status" => "ok"]);
+        break;
+
+    case 'get_log_modification_history':
+        $logId = $_GET['logId'] ?? '';
+        if (!$logId) { echo json_encode([]); break; }
+        $stmt = $pdo->prepare("SELECT id, log_id, modified_at, modified_by_user_id, old_duration_seconds, new_duration_seconds, old_date_str, new_date_str, old_comment, new_comment FROM log_modification_history WHERE log_id = ? ORDER BY modified_at DESC");
+        $stmt->execute([$logId]);
+        echo json_encode($stmt->fetchAll());
         break;
 
     default:

@@ -8,7 +8,9 @@ import LoginView from './views/LoginView';
 import AdminView from './views/AdminView';
 import ProfileView from './views/ProfileView';
 import AdminUserDetailView from './views/AdminUserDetailView';
+import AdminProjectDetailView from './views/AdminProjectDetailView';
 import AdminStatsView from './views/AdminStatsView';
+import AdminDashboardView from './views/AdminDashboardView';
 import WeeklyHistoryView from './views/WeeklyHistoryView';
 import MovementsView from './views/MovementsView';
 import { View, Project, DailyLog, User, Role } from './types';
@@ -68,9 +70,17 @@ const App: React.FC = () => {
       if (savedSession) {
         const user = JSON.parse(savedSession);
         setCurrentUser(user);
+        if (user.role === Role.ADMIN) setCurrentView(View.ADMIN_DASHBOARD);
       }
     });
   }, []);
+
+  // Admin no tiene Terminal ni Estadísticas: redirigir al Panel Global
+  useEffect(() => {
+    if (currentUser?.role === Role.ADMIN && (currentView === View.DASHBOARD || currentView === View.ADMIN_STATS || currentView === View.REPORTS)) {
+      setCurrentView(View.ADMIN_DASHBOARD);
+    }
+  }, [currentUser?.role, currentView]);
 
   useEffect(() => {
     if (currentUser?.id) {
@@ -88,19 +98,39 @@ const App: React.FC = () => {
       ]);
 
       const nowMillis = Date.now();
-      const updatedProjects = userProjects.map(p => {
+      // Solo puede haber un temporizador en marcha: normalizar por si el servidor devolvió varios con running_since
+      let foundRunning = false;
+      const runningIds = userProjects.filter((p: LocalProject) => p.runningSince).map((p: LocalProject) => p.id);
+      const withSeconds = userProjects.map((p: LocalProject) => {
         let displaySeconds = p.currentDaySeconds || 0;
+        let runningSince = p.runningSince;
         if (p.runningSince) {
-          const startMillis = parseInt(p.runningSince);
-          if (!isNaN(startMillis)) {
-            const diff = Math.floor((nowMillis - startMillis) / 1000);
-            displaySeconds += Math.max(0, diff);
+          if (foundRunning) {
+            runningSince = null;
+          } else {
+            foundRunning = true;
+            const startMillis = parseInt(p.runningSince);
+            if (!isNaN(startMillis)) {
+              displaySeconds += Math.floor((nowMillis - startMillis) / 1000);
+              displaySeconds = Math.max(0, displaySeconds);
+            }
           }
         }
-        return { ...p, currentDaySeconds: displaySeconds };
+        return { ...p, currentDaySeconds: displaySeconds, runningSince: runningSince ?? null, status: runningSince ? 'Running' as const : 'Active' as const };
       });
 
-      setProjects(updatedProjects);
+      setProjects(withSeconds);
+      // Si había más de uno en marcha, persistir el parado en el servidor
+      if (runningIds.length > 1) {
+        for (let i = 1; i < runningIds.length; i++) {
+          const proj = withSeconds.find((p: LocalProject) => p.id === runningIds[i]);
+          if (proj) {
+            try {
+              await db.saveProject({ ...proj, userId, runningSince: null });
+            } catch (_) {}
+          }
+        }
+      }
       setHistoricalLogs(userLogs);
     } catch (e) {
       console.error("Fallo al cargar datos", e);
@@ -109,6 +139,7 @@ const App: React.FC = () => {
 
   const handleLogin = (user: User) => {
     setCurrentUser(user);
+    if (user.role === Role.ADMIN) setCurrentView(View.ADMIN_DASHBOARD);
     localStorage.setItem('mod_tracker_session', JSON.stringify(user));
   };
 
@@ -127,14 +158,15 @@ const App: React.FC = () => {
 
     const today = new Date().toDateString();
     for (const project of projectsToCommit) {
-      const finalLog: DailyLog = { 
+      const finalLog: DailyLog & { comment?: string } = { 
         id: `LOG-${Math.random().toString(36).substr(2, 6).toUpperCase()}`, 
         userId: currentUser.id, 
         date: today, 
         projectId: project.id, 
         projectName: project.name, 
         durationSeconds: Math.floor(project.currentDaySeconds), 
-        status: 'NORMAL'
+        status: 'NORMAL',
+        comment: (project as LocalProject).sessionComment ?? undefined
       };
       await db.saveLog(finalLog);
       
@@ -142,7 +174,8 @@ const App: React.FC = () => {
         ...project,
         userId: currentUser.id,
         runningSince: null,
-        currentDaySeconds: 0
+        currentDaySeconds: 0,
+        sessionComment: undefined
       });
     }
     
@@ -284,6 +317,51 @@ const App: React.FC = () => {
     }
   };
 
+  const handleEditLog = async (payload: { id: string; durationSeconds: number; date: string; comment?: string | null }) => {
+    if (!currentUser) return;
+    try {
+      await db.updateLog({ ...payload, modifiedByUserId: currentUser.id });
+      loadUserData(currentUser.id);
+    } catch (e) {
+      alert('Error al guardar el movimiento.');
+    }
+  };
+
+  const handleCommentChange = async (projectId: string, sessionComment: string) => {
+    if (!currentUser) return;
+    const updated = projects.map(p => p.id === projectId ? { ...p, sessionComment } : p);
+    setProjects(updated as LocalProject[]);
+    try {
+      const p = updated.find(x => x.id === projectId);
+      if (p) await db.saveProject({ ...p, userId: currentUser.id });
+    } catch (e) { console.error(e); }
+  };
+
+  const handleResetProject = async (projectId: string) => {
+    if (!currentUser) return;
+    if (!confirm('¿Poner el contador a cero? Se perderá el tiempo acumulado del día para este proyecto.')) return;
+    const updated = projects.map(p => p.id === projectId ? { ...p, currentDaySeconds: 0, runningSince: null, status: 'Active' as const } : p);
+    setProjects(updated as LocalProject[]);
+    try {
+      const p = updated.find(x => x.id === projectId);
+      if (p) await db.saveProject({ ...p, userId: currentUser.id, currentDaySeconds: 0, runningSince: null });
+      loadUserData(currentUser.id);
+    } catch (e) { alert('Error al resetear.'); }
+  };
+
+  const handleAdjustTimer = async (projectId: string, deltaSeconds: number) => {
+    if (!currentUser) return;
+    const target = projects.find(p => p.id === projectId);
+    if (!target) return;
+    const newSeconds = Math.max(0, Math.floor((target.currentDaySeconds || 0) + deltaSeconds));
+    const updated = projects.map(p => p.id === projectId ? { ...p, currentDaySeconds: newSeconds } : p);
+    setProjects(updated as LocalProject[]);
+    try {
+      const p = updated.find(x => x.id === projectId);
+      if (p) await db.saveProject({ ...p, userId: currentUser.id, currentDaySeconds: newSeconds });
+    } catch (e) { console.error(e); }
+  };
+
   const handleReorderProjects = async (newOrder: string[]) => {
     if (!currentUser) return;
     const updatedUser = { ...currentUser, projectOrder: newOrder };
@@ -369,13 +447,29 @@ const App: React.FC = () => {
       case View.DASHBOARD: return { title: 'Terminal', activeTime: formatTimerShort(totalDailySeconds), actionLabel: 'Sincronizar' };
       case View.MOVEMENTS: return { title: 'Movimientos', actionLabel: 'Sincronizar' };
       case View.REPORTS: return { title: 'Reportes', actionLabel: 'Sincronizar' };
+      case View.ADMIN_DASHBOARD: return { title: 'Panel Global', actionLabel: 'Acción' };
       default: return { title: 'MOD Tracker', actionLabel: 'Acción' };
     }
   };
 
   const renderView = () => {
     if (selectedAdminUser && currentView === View.ADMIN_USERS) {
-       return <AdminUserDetailView user={selectedAdminUser} onBack={() => setSelectedAdminUser(null)} />;
+      return (
+        <AdminUserDetailView
+          user={selectedAdminUser}
+          onBack={() => setSelectedAdminUser(null)}
+          onProjectClick={(id) => { setSelectedProjectId(id); setCurrentView(View.ADMIN_PROJECTS); }}
+        />
+      );
+    }
+    if (selectedProjectId && currentView === View.ADMIN_PROJECTS) {
+      return (
+        <AdminProjectDetailView
+          projectId={selectedProjectId}
+          onBack={() => setSelectedProjectId(null)}
+          onUserSelect={(u) => { setSelectedAdminUser(u); setCurrentView(View.ADMIN_USERS); }}
+        />
+      );
     }
     switch (currentView) {
       case View.DASHBOARD: return (
@@ -389,15 +483,19 @@ const App: React.FC = () => {
           onToggleShowHidden={() => setShowHidden(!showHidden)}
           onNewProject={() => setIsModalOpen(true)} 
           onReorderProjects={handleReorderProjects}
+          onCommentChange={handleCommentChange}
+          onResetProject={handleResetProject}
+          onAdjustTimer={handleAdjustTimer}
         />
       );
-      case View.MOVEMENTS: return <MovementsView currentUser={currentUser} onDeleteLog={handleDeleteLog} />;
+      case View.MOVEMENTS: return <MovementsView currentUser={currentUser} onDeleteLog={handleDeleteLog} onEditLog={handleEditLog} />;
       case View.PROJECT_LIST: return <ProjectList projects={projects} onEditProject={(p) => setEditingProject(p as LocalProject)} />;
       case View.REPORTS: return <Reports projects={projects} historicalLogs={historicalLogs} onManualCommit={() => commitDailyLogs()} />;
       case View.WEEKLY_HISTORY: return <WeeklyHistoryView currentUser={currentUser} />;
+      case View.ADMIN_DASHBOARD: return <AdminDashboardView onUserSelect={(u) => { setSelectedAdminUser(u); setCurrentView(View.ADMIN_USERS); }} />;
       case View.ADMIN_STATS: return <AdminStatsView onUserSelect={(u) => { setSelectedAdminUser(u); setCurrentView(View.ADMIN_USERS); }} />;
       case View.ADMIN_USERS: return <AdminView type="USERS" onUserSelect={(user) => setSelectedAdminUser(user)} />;
-      case View.ADMIN_PROJECTS: return <AdminView type="PROJECTS" onUserSelect={() => {}} externalSelectedId={selectedProjectId} />;
+      case View.ADMIN_PROJECTS: return <AdminView type="PROJECTS" onUserSelect={(u) => setSelectedAdminUser(u)} onProjectSelect={(p) => { setSelectedProjectId(p.id); }} />;
       case View.PROFILE: return <ProfileView user={currentUser} />;
       default: return null;
     }

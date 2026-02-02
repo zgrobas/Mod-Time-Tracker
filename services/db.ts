@@ -35,7 +35,9 @@ export class DBService {
 
   private async request(action: string, method: string = 'GET', body?: any) {
     const baseUrl = API_URL.startsWith('/') ? API_URL : `/${API_URL}`;
-    const fullUrl = `${baseUrl}?action=${action}${method === 'DELETE' ? `&id=${body}` : ''}`;
+    const fullUrl = action.includes('&')
+      ? `${baseUrl}?${action}`
+      : `${baseUrl}?action=${action}${method === 'DELETE' ? `&id=${body}` : ''}`;
     
     try {
       const options: RequestInit = {
@@ -134,8 +136,8 @@ export class DBService {
         isActive: true,
       }));
     }
-    // Es vital pasar el userId para que el servidor nos de el estado individualizado
-    const action = userId ? `get_projects&userId=${userId}` : 'get_projects';
+    // Es vital pasar el userId para que el servidor nos dé el estado individualizado
+    const action = userId ? `action=get_projects&userId=${encodeURIComponent(userId)}` : 'get_projects';
     const all = await this.request(action);
     // Fixed: Added userId mapping to satisfy Project interface requirements and support ownership-based logic in views
     return all.map((p: any) => ({
@@ -145,12 +147,12 @@ export class DBService {
       category: p.category,
       color: p.color,
       isGlobal: parseInt(p.is_global) === 1,
-      // hiddenBy ahora se maneja de forma individual en up.hidden_by_user
       isHiddenForUser: parseInt(p.hidden_by_user || 0) === 1,
       creatorId: p.creator_id,
       status: p.running_since ? 'Running' : 'Active',
       runningSince: p.running_since,
       currentDaySeconds: parseInt(p.current_day_seconds || 0),
+      sessionComment: p.session_comment ?? undefined,
       department: parseInt(p.is_global) === 1 ? 'GLOBAL' : 'PRIVATE',
       isActive: p.is_active === undefined ? true : parseInt(p.is_active) === 1
     }));
@@ -173,7 +175,7 @@ export class DBService {
       if (userId === undefined || userId === GROBAS_USER_ID) return buildGrobasMockLogs();
       return [];
     }
-    const action = userId ? `get_logs&userId=${userId}` : 'get_logs';
+    const action = userId ? `action=get_logs&userId=${encodeURIComponent(userId)}` : 'get_logs';
     const data = await this.request(action);
     return data.map((l: any) => ({
       id: l.id,
@@ -183,6 +185,7 @@ export class DBService {
       durationSeconds: parseInt(l.duration_seconds),
       date: l.date_str,
       status: l.status,
+      comment: l.comment ?? undefined,
       created_at: l.created_at
     }));
   }
@@ -195,6 +198,17 @@ export class DBService {
   async deleteLog(id: string): Promise<void> {
     if (isLocal() && !this._dbConnected) return;
     return this.request('delete_log', 'DELETE', id);
+  }
+
+  async updateLog(payload: { id: string; durationSeconds: number; date: string; comment?: string | null; modifiedByUserId: string }): Promise<void> {
+    if (isLocal() && !this._dbConnected) return;
+    return this.request('update_log', 'POST', payload);
+  }
+
+  async getLogModificationHistory(logId: string): Promise<any[]> {
+    if (isLocal() && !this._dbConnected) return [];
+    const data = await this.request(`action=get_log_modification_history&logId=${encodeURIComponent(logId)}`);
+    return Array.isArray(data) ? data : [];
   }
 }
 
