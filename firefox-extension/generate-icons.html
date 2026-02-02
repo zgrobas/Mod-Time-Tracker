@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Generador de Iconos - MOD Tracker</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #0a0e1a;
+      color: #fff;
+    }
+    .container {
+      background: #111827;
+      padding: 30px;
+      border: 1px solid #00a3e0;
+      border-radius: 8px;
+    }
+    h1 {
+      color: #00a3e0;
+      margin-bottom: 20px;
+    }
+    button {
+      background: #00a3e0;
+      color: #fff;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      border-radius: 4px;
+      margin: 10px 5px;
+    }
+    button:hover {
+      background: #0088cc;
+    }
+    .preview {
+      display: flex;
+      gap: 20px;
+      margin: 20px 0;
+      flex-wrap: wrap;
+    }
+    .preview-item {
+      text-align: center;
+    }
+    .preview-item canvas {
+      border: 2px solid #00a3e0;
+      border-radius: 4px;
+      margin-bottom: 10px;
+    }
+    .instructions {
+      background: rgba(0, 163, 224, 0.1);
+      padding: 15px;
+      border-left: 4px solid #00a3e0;
+      margin: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🕐 Generador de Iconos - MOD Tracker</h1>
+    
+    <div class="instructions">
+      <p><strong>Instrucciones:</strong></p>
+      <ol>
+        <li>Haz clic en "Generar Iconos" para crear las imágenes</li>
+        <li>Haz clic en cada tamaño para descargar el PNG</li>
+        <li>Guarda los archivos en la carpeta <code>icons/</code> con los nombres:
+          <ul>
+            <li><code>icon-16.png</code></li>
+            <li><code>icon-48.png</code></li>
+            <li><code>icon-128.png</code></li>
+          </ul>
+        </li>
+      </ol>
+    </div>
+
+    <button onclick="generateIcons()">Generar Iconos</button>
+    
+    <div class="preview" id="preview"></div>
+  </div>
+
+  <script>
+    function drawIcon(canvas, size) {
+      const ctx = canvas.getContext('2d');
+      canvas.width = size;
+      canvas.height = size;
+      
+      // Fondo oscuro
+      ctx.fillStyle = '#0a0e1a';
+      ctx.fillRect(0, 0, size, size);
+      
+      // Borde azul
+      const borderWidth = Math.max(2, size / 32);
+      ctx.strokeStyle = '#00a3e0';
+      ctx.lineWidth = borderWidth;
+      ctx.strokeRect(borderWidth, borderWidth, size - borderWidth * 2, size - borderWidth * 2);
+      
+      // Círculo del reloj
+      const centerX = size / 2;
+      const centerY = size / 2;
+      const radius = size * 0.2;
+      
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = '#00a3e0';
+      ctx.lineWidth = Math.max(2, size / 42);
+      ctx.stroke();
+      
+      // Manecilla de horas (12)
+      const hourLength = radius * 0.6;
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY);
+      ctx.lineTo(centerX, centerY - hourLength);
+      ctx.strokeStyle = '#00a3e0';
+      ctx.lineWidth = Math.max(2, size / 42);
+      ctx.lineCap = 'round';
+      ctx.stroke();
+      
+      // Manecilla de minutos (3)
+      const minuteLength = radius * 0.8;
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY);
+      ctx.lineTo(centerX + minuteLength, centerY);
+      ctx.strokeStyle = '#00a3e0';
+      ctx.lineWidth = Math.max(2, size / 42);
+      ctx.lineCap = 'round';
+      ctx.stroke();
+      
+      // Texto "MOD" (solo para tamaños grandes)
+      if (size >= 48) {
+        ctx.fillStyle = '#00a3e0';
+        ctx.font = `bold ${size / 8}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText('MOD', centerX, size - size * 0.15);
+      }
+    }
+    
+    function generateIcons() {
+      const sizes = [16, 48, 128];
+      const preview = document.getElementById('preview');
+      preview.innerHTML = '';
+      
+      sizes.forEach(size => {
+        const canvas = document.createElement('canvas');
+        drawIcon(canvas, size);
+        
+        const container = document.createElement('div');
+        container.className = 'preview-item';
+        
+        const label = document.createElement('div');
+        label.textContent = `${size}x${size}`;
+        label.style.marginBottom = '5px';
+        label.style.fontWeight = 'bold';
+        
+        const downloadBtn = document.createElement('button');
+        downloadBtn.textContent = `Descargar ${size}x${size}`;
+        downloadBtn.style.fontSize = '12px';
+        downloadBtn.style.padding = '8px 16px';
+        downloadBtn.onclick = () => {
+          canvas.toBlob(blob => {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `icon-${size}.png`;
+            a.click();
+            URL.revokeObjectURL(url);
+          });
+        };
+        
+        container.appendChild(label);
+        container.appendChild(canvas);
+        container.appendChild(downloadBtn);
+        preview.appendChild(container);
+      });
+    }
+    
+    // Generar automáticamente al cargar
+    window.onload = generateIcons;
+  </script>
+</body>
+</html>

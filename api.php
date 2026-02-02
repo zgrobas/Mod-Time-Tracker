@@ -157,16 +157,33 @@ switch($action) {
         
         $pdo->beginTransaction();
         
-        $stmtP = $pdo->prepare("INSERT INTO projects (id, creator_id, name, category, color, is_global, is_active) VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name), category=VALUES(category), color=VALUES(color), is_global=VALUES(is_global), is_active=VALUES(is_active)");
-        $stmtP->execute([
-            $data['id'], 
-            $data['creatorId'] ?? $userId, 
-            $data['name'], 
-            $data['category'], 
-            $data['color'], 
-            $data['isGlobal'] ? 1 : 0, 
-            ($data['isActive'] === false) ? 0 : 1
-        ]);
+        // Solo actualizar campos de projects si están presentes y no son NULL/vacíos
+        // Esto previene sobrescribir datos existentes con NULL
+        if (isset($data['name']) && $data['name'] !== null && $data['name'] !== '' && $data['name'] !== 'null') {
+            // Si tenemos name, también necesitamos los otros campos básicos
+            $stmtP = $pdo->prepare("INSERT INTO projects (id, creator_id, name, category, color, is_global, is_active) VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name), category=VALUES(category), color=VALUES(color), is_global=VALUES(is_global), is_active=VALUES(is_active)");
+            $stmtP->execute([
+                $data['id'], 
+                $data['creatorId'] ?? $userId, 
+                $data['name'], 
+                $data['category'] ?? 'General', 
+                $data['color'] ?? 'vibrant-blue', 
+                isset($data['isGlobal']) ? ($data['isGlobal'] ? 1 : 0) : 0, 
+                isset($data['isActive']) ? (($data['isActive'] === false) ? 0 : 1) : 1
+            ]);
+        } else {
+            // Si no hay name, solo asegurar que el proyecto existe (no actualizar campos)
+            $stmtP = $pdo->prepare("INSERT IGNORE INTO projects (id, creator_id, name, category, color, is_global, is_active) VALUES (?,?,?,?,?,?,?)");
+            $stmtP->execute([
+                $data['id'], 
+                $data['creatorId'] ?? $userId, 
+                'Temporal', 
+                'General', 
+                'vibrant-blue', 
+                0, 
+                1
+            ]);
+        }
 
         if ($userId) {
             // running_since=VALUES(running_since) para que null pare el cronómetro (reset/pausa)
