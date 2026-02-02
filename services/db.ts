@@ -167,7 +167,12 @@ export class DBService {
   }
 
   async getLogs(userId?: string): Promise<any[]> {
-    if (isLocal() && !this._dbConnected) return [];
+    if (isLocal() && !this._dbConnected) {
+      const { buildGrobasMockLogs, GROBAS_USER_ID } = await import('../mockData/grobasTestData');
+      // Sin userId (historial) o para Grobas: devolver logs de prueba
+      if (userId === undefined || userId === GROBAS_USER_ID) return buildGrobasMockLogs();
+      return [];
+    }
     const action = userId ? `get_logs&userId=${userId}` : 'get_logs';
     const data = await this.request(action);
     return data.map((l: any) => ({
