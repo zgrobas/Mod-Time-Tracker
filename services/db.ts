@@ -1,16 +1,38 @@
-
 // Intentamos determinar la base del sitio para que api.php se encuentre siempre en la raíz
 const getApiUrl = () => {
   const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   if (isDev) return 'api.php'; // En dev, Vite suele manejarlo relativo
-  
+
   // En producción (Plesk), forzamos la raíz del dominio
   return '/api.php';
 };
 
 const API_URL = getApiUrl();
 
+const isLocal = () =>
+  window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+// Usuarios locales para poder entrar sin BD (Admin y Grobas)
+const LOCAL_MOCK_USERS = [
+  { id: 'admin-001', username: 'Admin', password: '123456789', role: 'ADMIN', avatarSeed: 'admin-default', lastLogin: '', projectOrder: [] },
+  { id: 'grobas-001', username: 'Grobas', password: '123456789', role: 'USER', avatarSeed: 'grobas-default', lastLogin: '', projectOrder: [] },
+];
+
+// Proyectos de prueba cuando no hay conexión a la BD (8 proyectos)
+const LOCAL_MOCK_PROJECTS = [
+  { id: 'PJ-DEMO-1', name: 'Phoenix Rebrand', category: 'Design Systems', color: 'vibrant-red' },
+  { id: 'PJ-DEMO-2', name: 'Internal Audit', category: 'Finance & Legal', color: 'vibrant-blue' },
+  { id: 'PJ-DEMO-3', name: 'Market Strategy', category: 'Q4 Social Strategy', color: 'vibrant-green' },
+  { id: 'PJ-DEMO-4', name: 'API Layer', category: 'Stripe & PayPal Connect', color: 'vibrant-orange' },
+  { id: 'PJ-DEMO-5', name: 'Mobile UI Kit', category: 'Product Design', color: 'vibrant-purple' },
+  { id: 'PJ-DEMO-6', name: 'Style Guide', category: 'Business Strategy', color: 'vibrant-pink' },
+  { id: 'PJ-DEMO-7', name: 'Client Portal', category: 'Support', color: 'vibrant-cyan' },
+  { id: 'PJ-DEMO-8', name: 'Admin Core', category: 'Operations', color: 'vibrant-yellow' },
+];
+
 export class DBService {
+  private _dbConnected = false;
+
   private async request(action: string, method: string = 'GET', body?: any) {
     const baseUrl = API_URL.startsWith('/') ? API_URL : `/${API_URL}`;
     const fullUrl = `${baseUrl}?action=${action}${method === 'DELETE' ? `&id=${body}` : ''}`;
@@ -48,8 +70,10 @@ export class DBService {
   async checkConnection(): Promise<boolean> {
     try {
       const res = await this.request('status');
-      return res.status === 'online';
+      this._dbConnected = res.status === 'online';
+      return this._dbConnected;
     } catch (e) {
+      this._dbConnected = false;
       return false;
     }
   }
@@ -59,6 +83,17 @@ export class DBService {
   }
 
   async getUsers(): Promise<any[]> {
+    if (isLocal() && !this._dbConnected) {
+      return LOCAL_MOCK_USERS.map(u => ({
+        id: u.id,
+        username: u.username,
+        password: u.password,
+        role: u.role,
+        avatarSeed: u.avatarSeed,
+        lastLogin: u.lastLogin,
+        projectOrder: u.projectOrder ?? []
+      }));
+    }
     const data = await this.request('get_users');
     return data.map((u: any) => ({
       id: u.id,
@@ -72,14 +107,33 @@ export class DBService {
   }
 
   async saveUser(user: any): Promise<void> {
+    if (isLocal() && !this._dbConnected) return;
     return this.request('save_user', 'POST', user);
   }
 
   async deleteUser(id: string): Promise<void> {
+    if (isLocal() && !this._dbConnected) return;
     return this.request('delete_log', 'DELETE', id);
   }
 
   async getProjects(userId?: string): Promise<any[]> {
+    if (isLocal() && !this._dbConnected) {
+      return LOCAL_MOCK_PROJECTS.map(p => ({
+        id: p.id,
+        userId: userId ?? null,
+        name: p.name,
+        category: p.category,
+        color: p.color,
+        isGlobal: false,
+        isHiddenForUser: false,
+        creatorId: userId ?? null,
+        status: 'Active' as const,
+        runningSince: null,
+        currentDaySeconds: 0,
+        department: 'PRIVATE',
+        isActive: true,
+      }));
+    }
     // Es vital pasar el userId para que el servidor nos de el estado individualizado
     const action = userId ? `get_projects&userId=${userId}` : 'get_projects';
     const all = await this.request(action);
@@ -103,15 +157,17 @@ export class DBService {
   }
 
   async saveProject(project: any): Promise<void> {
-    // Aseguramos que el objeto enviado tenga userId para que se guarde en user_projects
+    if (isLocal() && !this._dbConnected) return;
     return this.request('save_project', 'POST', project);
   }
 
   async deleteProject(id: string): Promise<void> {
+    if (isLocal() && !this._dbConnected) return;
     return this.request('delete_project', 'DELETE', id);
   }
 
   async getLogs(userId?: string): Promise<any[]> {
+    if (isLocal() && !this._dbConnected) return [];
     const action = userId ? `get_logs&userId=${userId}` : 'get_logs';
     const data = await this.request(action);
     return data.map((l: any) => ({
@@ -127,14 +183,12 @@ export class DBService {
   }
 
   async saveLog(log: any): Promise<void> {
+    if (isLocal() && !this._dbConnected) return;
     return this.request('save_log', 'POST', log);
   }
 
-  async updateLog(log: any): Promise<void> {
-    return this.request('update_log', 'POST', log);
-  }
-
   async deleteLog(id: string): Promise<void> {
+    if (isLocal() && !this._dbConnected) return;
     return this.request('delete_log', 'DELETE', id);
   }
 }

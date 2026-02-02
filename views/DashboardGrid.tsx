@@ -92,7 +92,7 @@ const DashboardGrid: React.FC<DashboardGridProps> = ({
         </button>
       </div>
 
-      <div className="grid grid-cols-2 landscape:grid-cols-4 lg:grid-cols-4 gap-3 lg:gap-6 transition-all duration-300">
+      <div className="grid grid-cols-2 landscape:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4 gap-3 lg:gap-4 xl:gap-6 transition-all duration-300">
         {filteredProjects.map((project) => {
           const isRunning = project.status === 'Running';
           const isHidden = project.isHiddenForUser;
@@ -107,7 +107,7 @@ const DashboardGrid: React.FC<DashboardGridProps> = ({
               onDragEnter={(e) => handleDragEnter(e, project.id)}
               onDragEnd={handleDragEnd}
               className={`
-                group relative flex flex-col justify-between aspect-square p-4 lg:p-8 cursor-pointer transition-all duration-300
+                group relative flex flex-col justify-between aspect-square p-4 lg:p-5 xl:p-8 cursor-pointer transition-all duration-300
                 ${project.color} ${isRunning ? 'active-project-card scale-[1.03]' : 'opacity-90 hover:brightness-110'}
                 ${isLight ? 'text-black' : 'text-white'}
                 ${isHidden || isInactive ? 'grayscale opacity-30 brightness-50' : ''}
@@ -126,28 +126,28 @@ const DashboardGrid: React.FC<DashboardGridProps> = ({
                   )}
                 </div>
                 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 lg:gap-2">
                   {!isInactive && (
                     <>
                       <button 
                         onClick={(e) => { e.stopPropagation(); onToggleHide(project.id); }}
-                        className={`w-6 h-6 lg:w-8 lg:h-8 flex items-center justify-center border transition-all hover:scale-110 ${isLight ? 'border-black/20 hover:bg-black hover:text-white' : 'border-white/20 hover:bg-white hover:text-mod-dark'}`}
+                        className={`w-5 h-5 lg:w-6 lg:h-6 xl:w-8 xl:h-8 flex items-center justify-center border transition-all hover:scale-110 ${isLight ? 'border-black/20 hover:bg-black hover:text-white' : 'border-white/20 hover:bg-white hover:text-mod-dark'}`}
                         title={isHidden ? "Mostrar" : "Ocultar"}
                       >
-                        <span className="material-symbols-outlined text-sm lg:text-lg">{isHidden ? 'visibility' : 'visibility_off'}</span>
+                        <span className="material-symbols-outlined text-xs lg:text-sm xl:text-lg">{isHidden ? 'visibility' : 'visibility_off'}</span>
                       </button>
                       <button 
                         onClick={(e) => { e.stopPropagation(); onStartWithTime(project.id); }}
-                        className={`w-6 h-6 lg:w-8 lg:h-8 flex items-center justify-center border transition-all hover:scale-110 ${isLight ? 'border-black/20 hover:bg-black hover:text-white' : 'border-white/20 hover:bg-white hover:text-mod-dark'}`}
+                        className={`w-5 h-5 lg:w-6 lg:h-6 xl:w-8 xl:h-8 flex items-center justify-center border transition-all hover:scale-110 ${isLight ? 'border-black/20 hover:bg-black hover:text-white' : 'border-white/20 hover:bg-white hover:text-mod-dark'}`}
                         title="Cargar/Iniciar con tiempo"
                       >
-                        <span className="material-symbols-outlined text-sm lg:text-lg">more_time</span>
+                        <span className="material-symbols-outlined text-xs lg:text-sm xl:text-lg">more_time</span>
                       </button>
                       <button 
                         onClick={(e) => { e.stopPropagation(); onToggleTimer(project.id); }}
-                        className={`w-6 h-6 lg:w-8 lg:h-8 flex items-center justify-center border transition-all hover:scale-110 ${isRunning ? (isLight ? 'bg-black text-white border-black' : 'bg-white text-mod-dark border-white') : (isLight ? 'border-black/20 hover:bg-black hover:text-white' : 'border-white/20 hover:bg-white hover:text-mod-dark')}`}
+                        className={`w-5 h-5 lg:w-6 lg:h-6 xl:w-8 xl:h-8 flex items-center justify-center border transition-all hover:scale-110 ${isRunning ? (isLight ? 'bg-black text-white border-black' : 'bg-white text-mod-dark border-white') : (isLight ? 'border-black/20 hover:bg-black hover:text-white' : 'border-white/20 hover:bg-white hover:text-mod-dark')}`}
                       >
-                        <span className="material-symbols-outlined text-sm lg:text-lg">{isRunning ? 'pause' : 'play_arrow'}</span>
+                        <span className="material-symbols-outlined text-xs lg:text-sm xl:text-lg">{isRunning ? 'pause' : 'play_arrow'}</span>
                       </button>
                     </>
                   )}
@@ -157,13 +157,13 @@ const DashboardGrid: React.FC<DashboardGridProps> = ({
                 </div>
               </div>
 
-              <div>
-                <h3 className="text-xs lg:text-2xl font-black uppercase tracking-tighter truncate drop-shadow-sm">{project.name}</h3>
-                <p className="text-[7px] lg:text-[10px] font-bold uppercase opacity-60 truncate">{project.category}</p>
+              <div className="min-h-0">
+                <h3 className="text-xs lg:text-base xl:text-2xl font-black uppercase tracking-tighter truncate drop-shadow-sm">{project.name}</h3>
+                <p className="text-[7px] lg:text-[9px] xl:text-[10px] font-bold uppercase opacity-60 truncate">{project.category}</p>
               </div>
 
-              <div className="space-y-2 lg:space-y-4 pointer-events-none">
-                <div className="text-xl lg:text-4xl font-mono font-bold tracking-tighter">
+              <div className="space-y-1 lg:space-y-2 xl:space-y-4 pointer-events-none min-h-0 flex flex-col justify-end">
+                <div className="text-base lg:text-xl xl:text-4xl font-mono font-bold tracking-tighter leading-tight overflow-hidden">
                   {formatTimerWithSeconds(project.currentDaySeconds, isRunning)}
                 </div>
                 <div className="h-0.5 w-full bg-black/10">

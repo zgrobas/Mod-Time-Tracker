@@ -51,7 +51,7 @@ const Header: React.FC<HeaderProps> = ({ title, user, onMenuToggle, onSearch, ac
   return (
     <header className="flex items-center justify-between border-b border-mod-border bg-mod-dark px-4 lg:px-10 py-4 lg:py-6 z-[60] relative">
       <div className="flex items-center gap-4 lg:gap-6">
-        <button onClick={onMenuToggle} className="lg:hidden text-white">
+        <button onClick={onMenuToggle} className="sidebar:hidden text-white">
           <span className="material-symbols-outlined">menu</span>
         </button>
         
@@ -63,7 +63,7 @@ const Header: React.FC<HeaderProps> = ({ title, user, onMenuToggle, onSearch, ac
         </div>
         
         {isAdmin && (
-          <div className="hidden lg:block relative w-80" ref={searchRef}>
+          <div className="hidden sidebar:block relative w-80" ref={searchRef}>
             <input
               value={query}
               onChange={(e) => { setQuery(e.target.value); onSearch(e.target.value); setShowResults(true); }}

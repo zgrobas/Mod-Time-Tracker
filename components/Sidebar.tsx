@@ -28,18 +28,18 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, isOpen, onClose, onViewC
 
   return (
     <>
-      {/* Backdrop for mobile */}
+      {/* Backdrop cuando el menú está en modo overlay (por debajo de 1366px) */}
       {isOpen && (
         <div 
-          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[110] lg:hidden"
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[110] sidebar:hidden"
           onClick={onClose}
         />
       )}
 
       <aside className={`
-        fixed lg:static inset-y-0 left-0 w-64 flex-shrink-0 border-r border-mod-border bg-mod-dark flex flex-col justify-between p-6 z-[120]
+        fixed sidebar:static inset-y-0 left-0 w-64 flex-shrink-0 border-r border-mod-border bg-mod-dark flex flex-col justify-between p-6 z-[120]
         transition-transform duration-300 ease-in-out
-        ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        ${isOpen ? 'translate-x-0' : '-translate-x-full sidebar:translate-x-0'}
       `}>
         <div className="flex flex-col gap-8">
           <div className="flex items-center justify-between">
@@ -49,7 +49,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, isOpen, onClose, onViewC
               </div>
               <h1 className="text-white text-lg font-bold tracking-tighter italic">MOD <span className="font-light not-italic text-slate-400">TRACKER</span></h1>
             </div>
-            <button onClick={onClose} className="lg:hidden text-slate-500 hover:text-white">
+            <button onClick={onClose} className="sidebar:hidden text-slate-500 hover:text-white">
               <span className="material-symbols-outlined">close</span>
             </button>
           </div>

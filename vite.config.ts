@@ -5,6 +5,11 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   base: './', // Genera rutas relativas para los assets
+  server: {
+    proxy: {
+      '/api.php': 'http://localhost:8080',
+    },
+  },
   define: {
     'process.env.API_KEY': JSON.stringify(process.env.API_KEY || '')
   },

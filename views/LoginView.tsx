@@ -22,6 +22,9 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
     check();
   }, []);
 
+  const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  const canEnterOffline = isLocal; // En local se puede entrar con usuarios mock (Admin / Grobas) sin BD
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -29,8 +32,8 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
 
     try {
       const allUsers = await db.getUsers();
-      const user = allUsers.find(u => 
-        u.username.toLowerCase() === username.toLowerCase() && 
+      const user = allUsers.find(u =>
+        u.username.toLowerCase() === username.toLowerCase() &&
         u.password === password
       );
 
@@ -110,7 +113,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
             )}
 
             <button 
-              disabled={loading || serverStatus === 'offline'}
+              disabled={loading || (serverStatus === 'offline' && !canEnterOffline)}
               className="w-full bg-white text-mod-dark py-4 font-bold text-[10px] uppercase tracking-[0.3em] hover:bg-mod-blue hover:text-white transition-all disabled:opacity-30"
             >
               {loading ? 'AUTENTICANDO...' : 'ENTRAR AL SISTEMA'}

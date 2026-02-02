@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+
+import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/db';
 import { DailyLog, User, Project, Role } from '../types';
 
@@ -22,7 +23,6 @@ const MovementsView: React.FC<MovementsViewProps> = ({ currentUser, onDeleteLog 
   const [users, setUsers] = useState<User[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const [editingLog, setEditingLog] = useState<(DailyLog & { created_at?: string }) | null>(null);
   
   const [filterUser, setFilterUser] = useState<string>(currentUser.role === Role.ADMIN ? 'ALL' : currentUser.id);
   const [filterProject, setFilterProject] = useState<string>('ALL');
@@ -39,7 +39,7 @@ const MovementsView: React.FC<MovementsViewProps> = ({ currentUser, onDeleteLog 
     const [allLogs, allUsers, allProjects] = await Promise.all([
       db.getLogs(),
       db.getUsers(),
-      db.getProjects(currentUser.id)
+      db.getProjects()
     ]);
     setLogs(allLogs);
     setUsers(allUsers);
@@ -105,12 +105,6 @@ const MovementsView: React.FC<MovementsViewProps> = ({ currentUser, onDeleteLog 
     return Object.values(groups).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [logs, filterUser, filterProject, filterDateFrom, filterDateTo]);
 
-  const handleUpdateLog = async (id: string, secs: number, date: string) => {
-    await db.updateLog({ id, durationSeconds: secs, date });
-    setEditingLog(null);
-    loadData();
-  };
-
   return (
     <div className="p-10 max-w-[1400px] mx-auto animate-in fade-in duration-500 pb-20">
       <div className="mb-10 flex items-end justify-between border-b border-mod-border pb-6">
@@ -123,6 +117,7 @@ const MovementsView: React.FC<MovementsViewProps> = ({ currentUser, onDeleteLog 
         </div>
       </div>
 
+      {/* Barra de Filtros */}
       <div className="bg-mod-card border border-mod-border p-6 mb-8 flex flex-wrap gap-6 items-end">
         {isAdmin && (
           <div className="flex flex-col gap-2">
@@ -245,23 +240,14 @@ const MovementsView: React.FC<MovementsViewProps> = ({ currentUser, onDeleteLog 
                                       <td className="px-8 py-3 text-mod-blue font-mono font-bold w-40 text-right">
                                         {formatTimeFull(entry.durationSeconds)}
                                       </td>
-                                      <td className="px-8 py-3 text-right w-32">
-                                        <div className="flex justify-end gap-1">
-                                          <button 
-                                            onClick={() => setEditingLog(entry)}
-                                            className="text-mod-blue hover:text-white hover:bg-mod-blue w-8 h-8 flex items-center justify-center transition-all"
-                                            title="Editar Sesión"
-                                          >
-                                            <span className="material-symbols-outlined text-sm">edit</span>
-                                          </button>
-                                          <button 
-                                            onClick={() => { if(confirm('¿Eliminar esta sesión individual?')) { onDeleteLog(entry.id); setTimeout(loadData, 300); } }}
-                                            className="text-red-500 hover:text-white hover:bg-red-600 w-8 h-8 flex items-center justify-center transition-all"
-                                            title="Borrar Sesión"
-                                          >
-                                            <span className="material-symbols-outlined text-sm">delete</span>
-                                          </button>
-                                        </div>
+                                      <td className="px-8 py-3 text-right w-20">
+                                        <button 
+                                          onClick={() => { if(confirm('¿Eliminar esta sesión individual?')) { onDeleteLog(entry.id); setTimeout(loadData, 300); } }}
+                                          className="text-red-500 hover:text-white hover:bg-red-600 w-8 h-8 flex items-center justify-center transition-all"
+                                          title="Borrar Sesión"
+                                        >
+                                          <span className="material-symbols-outlined text-sm">delete</span>
+                                        </button>
                                       </td>
                                     </tr>
                                   ))}
@@ -281,69 +267,6 @@ const MovementsView: React.FC<MovementsViewProps> = ({ currentUser, onDeleteLog 
               )}
             </tbody>
           </table>
-        </div>
-      </div>
-
-      {editingLog && (
-        <EditLogModal 
-          log={editingLog} 
-          onClose={() => setEditingLog(null)} 
-          onSave={handleUpdateLog} 
-        />
-      )}
-    </div>
-  );
-};
-
-const EditLogModal: React.FC<{ log: DailyLog; onClose: () => void; onSave: (id: string, secs: number, date: string) => void }> = ({ log, onClose, onSave }) => {
-  const [hours, setHours] = useState(Math.floor(log.durationSeconds / 3600).toString());
-  const [minutes, setMinutes] = useState(Math.floor((log.durationSeconds % 3600) / 60).toString());
-  const [date, setDate] = useState(new Date(log.date).toISOString().split('T')[0]);
-
-  const handleSave = () => {
-    const h = parseInt(hours) || 0;
-    const m = parseInt(minutes) || 0;
-    const totalSeconds = (h * 3600) + (m * 60);
-    const formattedDate = new Date(date + 'T12:00:00').toDateString();
-    onSave(log.id, totalSeconds, formattedDate);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-mod-dark/95 backdrop-blur-md z-[250] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-mod-card border border-white/20 w-full max-w-md p-8 shadow-[0_0_50px_rgba(0,163,224,0.1)]" onClick={e => e.stopPropagation()}>
-        <div className="flex justify-between items-center mb-8">
-          <h3 className="text-white font-black uppercase tracking-[0.3em] text-xs flex items-center gap-2">
-            <span className="material-symbols-outlined text-mod-blue">edit_note</span>
-            Editar Sesión
-          </h3>
-          <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors">
-             <span className="material-symbols-outlined">close</span>
-          </button>
-        </div>
-        
-        <div className="space-y-6">
-          <div>
-            <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">Proyecto</label>
-            <p className="text-white font-mono text-sm border-b border-mod-border pb-2 uppercase">{log.projectName}</p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-6">
-            <div>
-              <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">Horas</label>
-              <input type="number" value={hours} onChange={e=>setHours(e.target.value)} className="w-full bg-mod-dark border border-mod-border text-white text-center p-4 text-2xl font-mono focus:border-mod-blue outline-none" />
-            </div>
-            <div>
-              <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">Minutos</label>
-              <input type="number" value={minutes} onChange={e=>setMinutes(e.target.value)} className="w-full bg-mod-dark border border-mod-border text-white text-center p-4 text-2xl font-mono focus:border-mod-blue outline-none" />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">Fecha</label>
-            <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="w-full bg-mod-dark border border-mod-border text-white p-4 font-mono text-sm focus:border-mod-blue outline-none" />
-          </div>
-
-          <button onClick={handleSave} className="w-full bg-white text-mod-dark py-5 font-black uppercase text-[10px] tracking-[0.4em] hover:bg-mod-blue hover:text-white transition-all shadow-xl">Actualizar Registro</button>
         </div>
       </div>
     </div>
